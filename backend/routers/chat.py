@@ -222,16 +222,41 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
 
                 # 从 cloud_resources 查该终端在当前专场的资源（用 raw_data._terminal_id 关联）
                 async with async_session() as session:
-                    rows = await session.execute(
-                        _sql_text("""
-                            SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名')
-                            FROM cloud_resources
-                            WHERE (raw_data->>'_terminal_id')::int = :tid
-                            ORDER BY sort
-                        """),
-                        {"tid": current_terminal_id}
-                    )
-                    titles = [r[0] for r in rows.fetchall()]
+                    if current_scene_id:
+                        rows = await session.execute(
+                            _sql_text("""
+                                SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名')
+                                FROM cloud_resources
+                                WHERE (raw_data->>'_terminal_id')::int = :tid
+                                  AND (raw_data->>'_scene_id')::int = :sid
+                                ORDER BY sort
+                            """),
+                            {"tid": current_terminal_id, "sid": current_scene_id}
+                        )
+                        titles = [r[0] for r in rows.fetchall()]
+                        # 当前专场没有资源时，fallback 到该终端所有资源
+                        if not titles:
+                            rows2 = await session.execute(
+                                _sql_text("""
+                                    SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名')
+                                    FROM cloud_resources
+                                    WHERE (raw_data->>'_terminal_id')::int = :tid
+                                    ORDER BY sort
+                                """),
+                                {"tid": current_terminal_id}
+                            )
+                            titles = [r[0] for r in rows2.fetchall()]
+                    else:
+                        rows = await session.execute(
+                            _sql_text("""
+                                SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名')
+                                FROM cloud_resources
+                                WHERE (raw_data->>'_terminal_id')::int = :tid
+                                ORDER BY sort
+                            """),
+                            {"tid": current_terminal_id}
+                        )
+                        titles = [r[0] for r in rows.fetchall()]
 
                 if titles:
                     items = "、".join(f"第{i+1}个《{t}》" for i, t in enumerate(titles[:8]))

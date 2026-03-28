@@ -18,8 +18,16 @@
     }]
   }]}
 
-- 命令分组: GET /app/command/api/v1/groups/
-  返回: [{id, groupName, commands: [{id, btnName, command, url, ...}]}]
+- HTTP命令分组: GET /app/command/api/v1/groups/
+  返回: [{groupName, commandDetailVOList: [{id, btnName, command, url, ...}]}]
+
+- TCP组策略命令树: GET /pc/resource/api/v1/group/command/tree
+  返回树状3层: [{exhibitionAreaId, level:1, title, children:[
+    {level:2, title, children:[
+      {level:3, commandId, commandMsg, command, isHex, isOnOrOff, title}
+    ]}
+  ]}]
+  isHex="1" 表示HEX发送，isHex="0" 表示字符串发送
 """
 import logging
 import httpx
@@ -87,18 +95,68 @@ async def _fetch_scene_detail(api_url: str, scene_id: int) -> dict:
         await client.aclose()
 
 
-async def _fetch_commands(api_url: str) -> list:
-    """获取命令分组列表"""
+async def _fetch_http_commands(api_url: str) -> list:
+    """获取HTTP命令分组列表"""
     client = await _fresh_client()
     try:
         r = await client.get(f"{api_url}/app/command/api/v1/groups/")
         d = r.json()
         if d.get("code") == 200:
             return d.get("data", [])
-        logger.warning(f"Fetch commands: code={d.get('code')} msg={d.get('msg')}")
+        logger.warning(f"Fetch HTTP commands: code={d.get('code')} msg={d.get('msg')}")
         return []
     finally:
         await client.aclose()
+
+
+async def _fetch_tcp_command_tree(api_url: str) -> list:
+    """获取TCP组策略命令树（需要 exhibitionHallId 参数）"""
+    client = await _fresh_client()
+    try:
+        exhibition_id = int(await get_config("cloud.exhibition_id") or "5")
+        r = await client.get(
+            f"{api_url}/pc/resource/api/v1/group/command/tree",
+            params={"exhibitionHallId": exhibition_id}
+        )
+        d = r.json()
+        if d.get("code") == 200:
+            return d.get("data", [])
+        logger.warning(f"Fetch TCP command tree: code={d.get('code')} msg={d.get('msg')}")
+        return []
+    finally:
+        await client.aclose()
+
+
+def _flatten_tcp_commands(tree: list) -> list:
+    """将TCP命令树展平为命令列表（level=3节点）"""
+    commands = []
+    for area in tree:
+        if area.get("level") != 1:
+            continue
+        area_id = area.get("exhibitionAreaId")
+        area_title = area.get("title", "")
+        for device in area.get("children", []):
+            if device.get("level") != 2:
+                continue
+            device_title = device.get("title", "")
+            for cmd in device.get("children", []):
+                if cmd.get("level") != 3:
+                    continue
+                is_hex = cmd.get("isHex") == "1"
+                commands.append({
+                    "command_id": cmd.get("commandId"),
+                    "name": cmd.get("title", ""),
+                    "command_str": cmd.get("command", ""),
+                    "protocol_type": "tcp",
+                    "is_hex": is_hex,
+                    "group_name": f"{area_title} / {device_title}",
+                    "area_id": area_id,
+                    "area_name": area_title,
+                    "encoding": "hex" if is_hex else "utf-8",
+                    "command_msg": cmd.get("commandMsg", ""),
+                    "_raw": cmd,
+                })
+    return commands
 
 
 async def sync_scenes() -> dict:
@@ -282,8 +340,9 @@ async def sync_resources() -> dict:
 
 async def sync_commands() -> dict:
     """
-    同步命令数据
-    命令字段: id, btnName, command, url, groupId, groupName(from parent)
+    同步命令数据：HTTP命令 + TCP组策略命令
+    - HTTP: GET /app/command/api/v1/groups/
+    - TCP:  GET /pc/resource/api/v1/group/command/tree
     """
     api_url = await get_config("cloud.api_url") or "http://112.20.77.18:7772"
     sync_log = SyncLog(sync_type="commands", status="running", created_at=datetime.now())
@@ -293,33 +352,75 @@ async def sync_commands() -> dict:
         await session.refresh(sync_log)
 
     try:
-        groups = await _fetch_commands(api_url)
-        commands_flat = []
-        for group in groups:
+        # 步骤1: 同步 HTTP 命令
+        http_groups = await _fetch_http_commands(api_url)
+        http_commands = []
+        for group in http_groups:
             group_name = group.get("groupName", "")
-            for cmd in group.get("commands", []):
-                commands_flat.append({**cmd, "_group_name": group_name})
-        logger.info(f"Collected {len(commands_flat)} commands from {len(groups)} groups")
+            for cmd in group.get("commandDetailVOList", group.get("commands", [])):
+                http_commands.append({
+                    "command_id": cmd.get("id"),
+                    "name": str(cmd.get("btnName") or ""),
+                    "command_str": str(cmd.get("command") or ""),
+                    "url": str(cmd.get("url") or ""),
+                    "protocol_type": "http",
+                    "is_hex": False,
+                    "group_name": group_name,
+                    "encoding": "utf-8",
+                    "_raw": cmd,
+                })
+        logger.info(f"Collected {len(http_commands)} HTTP commands from {len(http_groups)} groups")
+
+        # 步骤2: 同步 TCP 命令
+        tcp_tree = await _fetch_tcp_command_tree(api_url)
+        tcp_commands = _flatten_tcp_commands(tcp_tree)
+        logger.info(f"Collected {len(tcp_commands)} TCP commands from tree")
+
+        all_commands = http_commands + tcp_commands
+        logger.info(f"Total commands: {len(all_commands)} (HTTP:{len(http_commands)}, TCP:{len(tcp_commands)})")
 
         async with async_session() as session:
             await session.execute(delete(CloudCommand))
-            for c in commands_flat:
+            for c in http_commands:
                 session.add(CloudCommand(
-                    command_id=c.get("id"),
-                    name=str(c.get("btnName") or c.get("name") or ""),
-                    command_type=c.get("commandType") or "",
-                    command_str=str(c.get("command") or c.get("commandStr") or ""),
-                    encoding=str(c.get("encoding") or "utf-8"),
-                    group_name=str(c.get("_group_name") or ""),
-                    raw_data=c,
+                    command_id=c.get("command_id"),
+                    name=c.get("name", ""),
+                    command_type="http",
+                    command_str=c.get("command_str", ""),
+                    url=c.get("url", ""),
+                    encoding="utf-8",
+                    group_name=c.get("group_name", ""),
+                    protocol_type="http",
+                    is_hex=False,
+                    raw_data=c.get("_raw", {}),
+                    synced_at=datetime.now()
+                ))
+            for c in tcp_commands:
+                session.add(CloudCommand(
+                    command_id=c.get("command_id"),
+                    name=c.get("name", ""),
+                    command_type="tcp",
+                    command_str=c.get("command_str", ""),
+                    encoding=c.get("encoding", "utf-8"),
+                    group_name=c.get("group_name", ""),
+                    protocol_type="tcp",
+                    is_hex=c.get("is_hex", False),
+                    area_id=c.get("area_id"),
+                    area_name=c.get("area_name", ""),
+                    raw_data=c.get("_raw", {}),
                     synced_at=datetime.now()
                 ))
             sync_log.status = "success"
-            sync_log.records_count = len(commands_flat)
+            sync_log.records_count = len(all_commands)
             session.add(sync_log)
             await session.commit()
 
-        return {"type": "commands", "count": len(commands_flat)}
+        return {
+            "type": "commands",
+            "count": len(all_commands),
+            "http_count": len(http_commands),
+            "tcp_count": len(tcp_commands),
+        }
 
     except Exception as e:
         logger.error(f"Sync commands failed: {e}", exc_info=True)

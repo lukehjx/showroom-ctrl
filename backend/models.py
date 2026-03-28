@@ -50,6 +50,11 @@ class CloudCommand(Base):
     command_str = Column(Text)
     encoding = Column(String, default='utf-8')
     group_name = Column(String)
+    protocol_type = Column(String, default='http')  # 'http' or 'tcp'
+    is_hex = Column(Boolean, default=False)
+    url = Column(String)  # base URL for HTTP commands
+    area_id = Column(Integer)
+    area_name = Column(String)
     raw_data = Column(JSONB)
     synced_at = Column(DateTime, default=datetime.now)
 

@@ -32,13 +32,37 @@ async def execute_action(action_type: str, action_config: dict, wait_type: str, 
 
     try:
         if action_type == "tcp_send":
-            host = action_config.get("host", "")
-            port = int(action_config.get("port", 80))
-            data = action_config.get("data", "")
-            encoding = action_config.get("encoding", "utf-8")
-            is_hex = action_config.get("is_hex", False)
-            ok = await send_tcp(host, port, data, encoding, is_hex)
-            result = {"success": ok, "output": f"TCP sent to {host}:{port}"}
+            command_id = action_config.get("command_id")
+            if command_id is not None:
+                # 从数据库查命令详情
+                from models import CloudCommand
+                from config import get_config
+                async with async_session() as session:
+                    cmd_result = await session.execute(
+                        select(CloudCommand).where(
+                            CloudCommand.command_id == int(command_id),
+                            CloudCommand.protocol_type == "tcp"
+                        )
+                    )
+                    cmd = cmd_result.scalar_one_or_none()
+                if cmd is None:
+                    result = {"success": False, "output": f"TCP command_id={command_id} not found in cloud_commands"}
+                else:
+                    host = action_config.get("host") or await get_config("tcp.host") or ""
+                    port = int(action_config.get("port") or await get_config("tcp.port") or 8989)
+                    data = cmd.command_str
+                    is_hex = cmd.is_hex or False
+                    encoding = "hex" if is_hex else "utf-8"
+                    ok_result = await send_tcp(host, port, data, encoding, is_hex)
+                    result = {"success": ok_result, "output": f"TCP command {cmd.name} sent to {host}:{port}"}
+            else:
+                host = action_config.get("host", "")
+                port = int(action_config.get("port", 80))
+                data = action_config.get("data", "")
+                encoding = action_config.get("encoding", "utf-8")
+                is_hex = action_config.get("is_hex", False)
+                ok_result = await send_tcp(host, port, data, encoding, is_hex)
+                result = {"success": ok_result, "output": f"TCP sent to {host}:{port}"}
 
         elif action_type == "http_get":
             url = action_config.get("url", "")

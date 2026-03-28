@@ -79,11 +79,17 @@ async def list_resources():
 
 
 @router.get("/commands")
-async def list_commands():
+async def list_commands(protocol_type: str = None):
     try:
         from models import CloudCommand
+        from sqlalchemy import and_
         async with async_session() as session:
-            result = await session.execute(select(CloudCommand).order_by(CloudCommand.group_name, CloudCommand.command_id))
+            query = select(CloudCommand).order_by(CloudCommand.group_name, CloudCommand.command_id)
+            if protocol_type:
+                query = select(CloudCommand).where(
+                    CloudCommand.protocol_type == protocol_type
+                ).order_by(CloudCommand.group_name, CloudCommand.command_id)
+            result = await session.execute(query)
             commands = result.scalars().all()
             data = [{
                 "id": c.id,
@@ -93,6 +99,11 @@ async def list_commands():
                 "command_str": c.command_str,
                 "encoding": c.encoding,
                 "group_name": c.group_name,
+                "protocol_type": c.protocol_type,
+                "is_hex": c.is_hex,
+                "url": c.url,
+                "area_id": c.area_id,
+                "area_name": c.area_name,
                 "synced_at": str(c.synced_at)
             } for c in commands]
         return ok(data)

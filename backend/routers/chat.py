@@ -225,7 +225,7 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
                     if current_scene_id:
                         rows = await session.execute(
                             _sql_text("""
-                                SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名')
+                                SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名'), resource_id
                                 FROM cloud_resources
                                 WHERE (raw_data->>'_terminal_id')::int = :tid
                                   AND (raw_data->>'_scene_id')::int = :sid
@@ -233,40 +233,49 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
                             """),
                             {"tid": current_terminal_id, "sid": current_scene_id}
                         )
-                        titles = [r[0] for r in rows.fetchall()]
+                        titles = rows.fetchall()  # [(title, resource_id), ...]
                         # 当前专场没有资源时，fallback 到该终端所有资源
                         if not titles:
                             rows2 = await session.execute(
                                 _sql_text("""
-                                    SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名')
+                                    SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名'), resource_id
                                     FROM cloud_resources
                                     WHERE (raw_data->>'_terminal_id')::int = :tid
                                     ORDER BY sort
                                 """),
                                 {"tid": current_terminal_id}
                             )
-                            titles = [r[0] for r in rows2.fetchall()]
+                            titles = rows2.fetchall()  # [(title, resource_id), ...]
                     else:
                         rows = await session.execute(
                             _sql_text("""
-                                SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名')
+                                SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名'), resource_id
                                 FROM cloud_resources
                                 WHERE (raw_data->>'_terminal_id')::int = :tid
                                 ORDER BY sort
                             """),
                             {"tid": current_terminal_id}
                         )
-                        titles = [r[0] for r in rows.fetchall()]
+                        titles = rows.fetchall()  # [(title, resource_id), ...]
 
                 if titles:
-                    items = "、".join(f"第{i+1}个《{t}》" for i, t in enumerate(titles[:8]))
+                    items = "、".join(f"第{i+1}个《{t[0]}》" for i, t in enumerate(titles[:8]))
                     msg = f"【{terminal_name}】共 {len(titles)} 个文件：{items}"
                     if len(titles) > 8:
                         msg += f"等{len(titles)}个，说第X个来播放"
                     else:
                         msg += "，说第X个来播放"
+                    # 存文件列表到 session（供 select 使用）
+                    resource_list = [{"title": t[0], "resource_id": t[1], "terminal_id": current_terminal_id} for t in titles]
+                    async with async_session() as session:
+                        cs = await session.get(ChatSession, chat_session.id)
+                        if cs:
+                            cs.shown_resources = resource_list
+                            cs.last_activity_at = datetime.now()
+                            await session.commit()
                 else:
                     msg = f"【{terminal_name}】在当前专场暂无内容"
+                    resource_list = []
                 return {"action": "list_files", "terminal_id": current_terminal_id, "count": len(titles), "message": msg}
             else:
                 # 没有当前终端，列出所有终端
@@ -284,7 +293,50 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
 
         elif intent == "select":
             index = extra.get("index", 1)
-            return {"action": "select", "index": index, "message": f"好，切换到第{index}个！"}
+            # 从 session 读文件列表
+            async with async_session() as session:
+                cs = await session.get(ChatSession, chat_session.id)
+                shown = cs.shown_resources if cs else None
+                current_tid = cs.current_exhibit_id if cs else None
+
+            if not shown:
+                return {"action": "select", "message": "还没有文件列表，请先说有哪些文件～"}
+
+            idx = int(index) - 1
+            if idx < 0 or idx >= len(shown):
+                return {"action": "select", "message": f"只有 {len(shown)} 个文件，请说第1到第{len(shown)}个～"}
+
+            item = shown[idx]
+            resource_id = item.get("resource_id")
+            terminal_id = item.get("terminal_id") or current_tid
+            title = item.get("title", f"第{index}个")
+
+            # 获取当前专场和 TCP 配置
+            from models import CurrentScene
+            from tcp_service import send_tcp
+            from config import get_config as _gc
+
+            async with async_session() as session:
+                sc_row = await session.execute(select(CurrentScene).limit(1))
+                sc = sc_row.scalar_one_or_none()
+                scene_id = sc.scene_id if sc else 68
+
+            tcp_host = await _gc("tcp.host") or "112.20.77.18"
+            tcp_port = int(await _gc("tcp.port") or "8989")
+
+            # TCP 投放命令: 2_{scene_id}_{terminal_id}_{resource_id}
+            cmd = f"2_{scene_id}_{terminal_id}_{resource_id}"
+            try:
+                ok = await send_tcp(tcp_host, tcp_port, cmd)
+                if ok:
+                    msg = f"好，正在播放《{title}》！🎬"
+                else:
+                    msg = f"《{title}》投放指令已发送，请查看屏幕～"
+            except Exception as e:
+                logger.error(f"TCP cast error: {e}")
+                msg = f"《{title}》投放时遇到点问题，请稍后再试～"
+
+            return {"action": "select", "index": index, "resource_id": resource_id, "terminal_id": terminal_id, "tcp_cmd": cmd, "message": msg}
 
         elif intent == "repeat":
             return {"action": "repeat", "message": "好的，我再说一遍～"}

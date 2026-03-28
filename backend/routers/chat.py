@@ -104,7 +104,88 @@ async def chat_input(body: ChatInput):
                         cs_obj.current_exhibit_id = terminal_id
                         cs_obj.last_activity_at = datetime.now()
                         await session.commit()
-            response_data["result"] = {"message": f"已到达【{poi}】，可以说有哪些文件查看当前内容", "terminal_id": terminal_id}
+            # 主动查文件列表并生成欢迎词
+            welcome_msg = f"已到达【{poi}】"
+            file_count = 0
+            if terminal_id:
+                from models import CurrentScene, CloudTerminal
+                from sqlalchemy import text as _arrival_sql
+                async with async_session() as session:
+                    sc_row = await session.execute(select(CurrentScene).limit(1))
+                    sc = sc_row.scalar_one_or_none()
+                    scene_id = sc.scene_id if sc else None
+
+                async with async_session() as session:
+                    if scene_id:
+                        rows = await session.execute(
+                            _arrival_sql(
+                                "SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名') "
+                                "FROM cloud_resources "
+                                "WHERE (raw_data->>'_terminal_id')::int = :tid "
+                                "  AND (raw_data->>'_scene_id')::int = :sid "
+                                "ORDER BY sort LIMIT 5"
+                            ),
+                            {"tid": terminal_id, "sid": scene_id}
+                        )
+                    else:
+                        rows = await session.execute(
+                            _arrival_sql(
+                                "SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名') "
+                                "FROM cloud_resources "
+                                "WHERE (raw_data->>'_terminal_id')::int = :tid "
+                                "ORDER BY sort LIMIT 5"
+                            ),
+                            {"tid": terminal_id}
+                        )
+                    titles = [r[0] for r in rows.fetchall()]
+                    file_count = len(titles)
+
+                if titles:
+                    items = "、".join(f"第{i+1}个《{t}》" for i, t in enumerate(titles[:3]))
+                    if file_count > 3:
+                        items += f"等{file_count}个内容"
+                    welcome_msg = (
+                        f"我已到达【{poi}】！这里有{file_count}个展示内容：{items}。"
+                        f"您可以说「第X个」播放，「讲解一下」听介绍，或「有哪些文件」查看完整列表。"
+                    )
+                else:
+                    welcome_msg = f"我已到达【{poi}】，这里暂无展示内容，您可以说「开始参观」继续浏览。"
+
+            # 双通道播报：机器人 TTS + 企微 Bot 推送
+            from config import get_config as _gc_arr
+            app_key = await _gc_arr("robot.app_key")
+            app_secret = await _gc_arr("robot.app_secret")
+            orion_base = await _gc_arr("robot.orion_api_base") or "https://openapi.orionstar.com"
+            robot_sn_cfg = await _gc_arr("robot.sn") or robot_sn
+
+            # 机器人 TTS
+            if app_key and app_secret:
+                try:
+                    import httpx as _hx, time as _t, hashlib as _hs
+                    _ts = str(int(_t.time() * 1000))
+                    _sign = _hs.md5(f"{app_key}{_ts}{app_secret}".encode()).hexdigest()
+                    async with _hx.AsyncClient(timeout=5) as _cli:
+                        await _cli.post(
+                            f"{orion_base}/openapi/robot/tts/v2",
+                            json={"robotSn": robot_sn_cfg, "text": welcome_msg, "priority": 3},
+                            headers={"appKey": app_key, "timestamp": _ts, "sign": _sign}
+                        )
+                except Exception as _e:
+                    logger.warning(f"Arrived TTS error: {_e}")
+
+            # 写 bot_notifications 表，让 wecom_bot 轮询推送
+            try:
+                from sqlalchemy import text as _notif_sql
+                async with async_session() as _ns:
+                    await _ns.execute(
+                        _notif_sql("INSERT INTO bot_notifications (robot_sn, message) VALUES (:sn, :msg)"),
+                        {"sn": robot_sn, "msg": welcome_msg}
+                    )
+                    await _ns.commit()
+            except Exception as _ne:
+                logger.warning(f"Write bot_notification failed: {_ne}")
+
+            response_data["result"] = {"message": welcome_msg, "terminal_id": terminal_id, "file_count": file_count}
 
         elif event == "tts_done":
             from lane_engine import trigger_callback
@@ -373,6 +454,31 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
 
         elif intent == "go_charge":
             return {"action": "go_charge", "message": "好嘞，去充电了，一会儿回来！⚡"}
+
+        elif intent == "help":
+            msg = (
+                "我是展厅导览助手，以下是我能做的：\n\n"
+                "📂 查看内容：「有哪些文件」\n"
+                "▶️ 播放内容：「第X个」（如：第二个）\n"
+                "🎙️ 听讲解：「讲解一下」/ 「讲解第X个」\n"
+                "🚶 参观导览：「开始参观」/ 「下一个」/ 「上一个」\n"
+                "💡 控制设备：「开灯」/ 「关灯」/ 「开广告机」\n"
+                "🔄 换展示内容：「换一套内容」/ 「切换到XX专场」\n"
+                "🔁 重复：「再说一遍」\n"
+                "⏹️ 停止：「停」"
+            )
+            return {"action": "help", "message": msg}
+
+        elif intent == "timeout":
+            return {"action": "timeout", "message": "网络响应有点慢，请再说一遍～"}
+
+        elif intent == "unknown":
+            # unknown → 先尝试闲聊，失败则给引导
+            try:
+                reply = await llm_chat(text, {"robot_sn": robot_sn})
+                return {"action": "chat", "message": reply}
+            except Exception:
+                return {"action": "unknown", "message": "没听清楚，您可以说：有哪些文件 / 第X个 / 讲解一下 / 开始参观 / 说「帮助」查看全部指令"}
 
         elif intent == "switch_scene":
             scene_name = extra.get("scene_name", "") or extra.get("raw_text", "")

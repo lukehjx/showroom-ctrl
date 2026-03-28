@@ -105,35 +105,55 @@ async def recognize_intent(text: str, context: dict = None) -> dict:
 
         client = AsyncOpenAI(api_key=qwen_key, base_url=QWEN_BASE_URL)
 
-        system_prompt = """你是展厅导览机器人的意图识别模块。
-根据用户输入，识别以下意图之一：
-- list_files: 查看文件/内容/资料
-- next_exhibit: 去下一个展项
-- prev_exhibit: 去上一个展项
-- start_tour: 开始参观
-- go_home: 回到入口/原位
-- go_charge: 去充电
-- repeat: 重复讲解
-- stop: 停止/结束
-- continue: 继续讲解
-- select: 选择某个选项（返回index字段）
-- device_control: 设备控制（开关灯、开关广告机、开关电源等，返回cmd_name字段）
-- query_exhibit: 询问某个展项（返回exhibit_name字段）
-- unknown: 无法识别
+        system_prompt = """你是展厅导览机器人的意图识别模块，请根据用户输入（可能含语音转文字错误）识别意图。
 
-只返回JSON格式：{"intent": "xxx", "extra": {}}"""
+意图列表（只能选其中一个）：
+- list_files: 查看/问有哪些文件、内容、资料
+  例：有哪些 / 给我看看 / 这里有什么 / 有什么可以看
+- select: 选择播放某个内容，必须返回index(1-10的整数)
+  例：第一个 / 播第二个 / 给我看第三个 / 第2个
+- narrate: 讲解/介绍某个内容，返回index(有序号时填，否则null)
+  例：讲解一下 / 介绍第二个 / 说说这个 / 念一下讲解词
+- next_exhibit: 去下一个展位/继续参观
+- prev_exhibit: 去上一个展位
+- start_tour: 开始参观/带我逛
+- go_home: 回到入口/回原位
+- go_charge: 去充电
+- repeat: 再说一遍/重复
+- stop: 停止/结束/好了
+- continue: 继续/接着说
+- switch_scene: 切换展示方案/专场，返回scene_name字段
+  例：换一套内容 / 切换到招商专场 / 换成节能专场 / 用参观接待方案
+- device_control: 控制设备（灯光/广告机/电源），返回cmd_name字段
+  例：开灯 / 关灯 / 开广告机 / 全部关机
+- help: 询问能做什么/怎么用/帮助
+  例：你能干什么 / 怎么操作 / 有什么功能
+- takeover: 接管控制，返回operator字段(bot或robot)
+- unknown: 完全无法识别（闲聊、问候等）
+
+注意：语音转文字可能出错，请根据语义判断。
+只返回JSON：{"intent": "xxx", "extra": {}}
+示例：{"intent": "select", "extra": {"index": 2}}"""
 
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text}
         ]
 
-        response = await client.chat.completions.create(
-            model=qwen_model,
-            messages=messages,
-            temperature=0.1,
-            max_tokens=200
-        )
+        import asyncio
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=qwen_model,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=150
+                ),
+                timeout=2.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"AI intent recognition timeout for '{text}'")
+            return {"intent": "timeout", "text": text, "extra": {}, "method": "timeout"}
 
         result_text = response.choices[0].message.content.strip()
         # 解析JSON

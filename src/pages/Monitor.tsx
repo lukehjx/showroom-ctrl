@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Card, Row, Col, Button, Tag, Typography, Space, Spin, Progress,
-  Badge, Modal, Select, message, Popconfirm,
+  Badge, Modal, Select, message, Popconfirm, Grid,
 } from 'antd'
 import {
   PlayCircleOutlined, PoweroffOutlined, SwapOutlined, ReloadOutlined,
@@ -16,6 +16,7 @@ import {
 
 const { Title, Text } = Typography
 const { Option } = Select
+const { useBreakpoint } = Grid
 
 const PRESET_ICONS: Record<string, string> = {
   vip: '👑', group: '👥', kids: '🎈', quick: '⚡', full: '🏛️', custom: '🎯',
@@ -35,6 +36,9 @@ export default function Monitor() {
   const [presets, setPresets] = useState<any[]>([])
   const [triggeringId, setTriggeringId] = useState<string | null>(null)
   const logRef = useRef<HTMLDivElement>(null)
+
+  const screens = useBreakpoint()
+  const isMobile = !screens.md
 
   const pollStatus = async () => {
     try {
@@ -150,46 +154,71 @@ export default function Monitor() {
   const displayLogs = logs.length > 0 ? logs : mockLogs
   const onlineCount = devices.filter((d) => d.online).length
 
+  const padding = isMobile ? 8 : 16
+  const cardStyle = { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }
+
+  // Status cards - single col on mobile, 4-col on desktop
+  const statusCards = [
+    { icon: <VideoCameraOutlined style={{ fontSize: isMobile ? 24 : 32, color: '#1677ff' }} />, label: '当前专场', value: status.currentScene, color: '#fff' },
+    { icon: <RobotOutlined style={{ fontSize: isMobile ? 24 : 32, color: '#52c41a' }} />, label: '机器人状态', value: status.robotStatus, color: '#fff' },
+    { icon: <TeamOutlined style={{ fontSize: isMobile ? 24 : 32, color: '#eb2f96' }} />, label: '会话状态', value: status.sessionStatus, color: '#fff' },
+    { icon: <WifiOutlined style={{ fontSize: isMobile ? 24 : 32, color: onlineCount === devices.length && devices.length > 0 ? '#52c41a' : '#faad14' }} />, label: '设备在线', value: `${onlineCount}/${devices.length}`, color: '#fff' },
+  ]
+
   return (
     <Spin spinning={loading}>
-      <Space direction="vertical" size={16} style={{ width: '100%' }}>
-        <Title level={4} style={{ color: '#fff', margin: 0 }}>
+      <Space direction="vertical" size={isMobile ? 10 : 16} style={{ width: '100%' }}>
+        <Title level={isMobile ? 5 : 4} style={{ color: '#fff', margin: 0 }}>
           <DashboardOutlined style={{ marginRight: 8, color: '#1677ff' }} />
           监控大屏
         </Title>
 
-        {/* 状态卡片 */}
-        <Row gutter={16}>
-          {[
-            { icon: <VideoCameraOutlined style={{ fontSize: 32, color: '#1677ff' }} />, label: '当前专场', value: status.currentScene, color: '#fff' },
-            { icon: <RobotOutlined style={{ fontSize: 32, color: '#52c41a' }} />, label: '机器人状态', value: status.robotStatus, color: '#fff' },
-            { icon: <TeamOutlined style={{ fontSize: 32, color: '#eb2f96' }} />, label: '会话状态', value: status.sessionStatus, color: '#fff' },
-            { icon: <WifiOutlined style={{ fontSize: 32, color: onlineCount === devices.length && devices.length > 0 ? '#52c41a' : '#faad14' }} />, label: '设备在线', value: `${onlineCount}/${devices.length}`, color: '#fff' },
-          ].map((item, i) => (
-            <Col span={6} key={i}>
-              <Card style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}>
-                <Space align="center">
-                  {item.icon}
-                  <div>
-                    <Text style={{ color: '#888', fontSize: 12 }}>{item.label}</Text>
-                    <div><Text style={{ color: item.color, fontSize: 18, fontWeight: 600 }}>{item.value}</Text></div>
-                  </div>
-                </Space>
-              </Card>
-            </Col>
-          ))}
-        </Row>
+        {/* 状态卡片 — 手机单列，桌面4列 */}
+        {isMobile ? (
+          <Row gutter={[8, 8]}>
+            {statusCards.map((item, i) => (
+              <Col span={12} key={i}>
+                <Card style={{ ...cardStyle, padding: 0 }} styles={{ body: { padding: '10px 12px' } }}>
+                  <Space align="center" size={8}>
+                    {item.icon}
+                    <div>
+                      <Text style={{ color: '#888', fontSize: 11 }}>{item.label}</Text>
+                      <div><Text style={{ color: item.color, fontSize: 15, fontWeight: 600 }}>{item.value}</Text></div>
+                    </div>
+                  </Space>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        ) : (
+          <Row gutter={16}>
+            {statusCards.map((item, i) => (
+              <Col span={6} key={i}>
+                <Card style={cardStyle}>
+                  <Space align="center">
+                    {item.icon}
+                    <div>
+                      <Text style={{ color: '#888', fontSize: 12 }}>{item.label}</Text>
+                      <div><Text style={{ color: item.color, fontSize: 18, fontWeight: 600 }}>{item.value}</Text></div>
+                    </div>
+                  </Space>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        )}
 
         {/* 当前接待 */}
         {currentReport && (
           <Card
             title={<Text style={{ color: '#fff' }}><EyeOutlined style={{ marginRight: 6, color: '#52c41a' }} />当前接待中</Text>}
-            style={{ background: '#1a1a1a', border: '1px solid #52c41a', borderRadius: 12 }}
+            style={{ ...cardStyle, border: '1px solid #52c41a' }}
+            styles={{ body: { padding } }}
           >
-            <Row gutter={16}>
-              <Col span={8}><Text style={{ color: '#888', fontSize: 12 }}>套餐</Text><div><Text style={{ color: '#fff', fontWeight: 600 }}>{currentReport.presetName || '—'}</Text></div></Col>
-              <Col span={8}><Text style={{ color: '#888', fontSize: 12 }}>已参观展项</Text><div><Text style={{ color: '#52c41a', fontWeight: 600, fontSize: 18 }}>{currentReport.exhibitCount || 0}</Text></div></Col>
-              <Col span={8}><Text style={{ color: '#888', fontSize: 12 }}>用时</Text><div><Text style={{ color: '#1677ff', fontWeight: 600 }}>{currentReport.duration || '—'}</Text></div></Col>
+            <Row gutter={8}>
+              <Col span={8}><Text style={{ color: '#888', fontSize: 11 }}>套餐</Text><div><Text style={{ color: '#fff', fontWeight: 600 }}>{currentReport.presetName || '—'}</Text></div></Col>
+              <Col span={8}><Text style={{ color: '#888', fontSize: 11 }}>已参观展项</Text><div><Text style={{ color: '#52c41a', fontWeight: 600, fontSize: 16 }}>{currentReport.exhibitCount || 0}</Text></div></Col>
+              <Col span={8}><Text style={{ color: '#888', fontSize: 11 }}>用时</Text><div><Text style={{ color: '#1677ff', fontWeight: 600 }}>{currentReport.duration || '—'}</Text></div></Col>
             </Row>
           </Card>
         )}
@@ -197,33 +226,73 @@ export default function Monitor() {
         {/* 快捷操作 */}
         <Card
           title={<Text style={{ color: '#fff' }}>快捷操作</Text>}
-          style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}
+          style={cardStyle}
+          styles={{ body: { padding } }}
         >
-          <Space size={12} wrap>
-            <Button type="primary" size="large" icon={<PlayCircleOutlined />} onClick={handleOpenHall}>开启展厅</Button>
-            <Button danger size="large" icon={<PoweroffOutlined />} onClick={handleCloseHall}>关闭展厅</Button>
-            <Button size="large" icon={<SwapOutlined />} onClick={() => setSwitchModalVisible(true)} style={{ borderColor: '#faad14', color: '#faad14' }}>切换专场</Button>
-            <Button size="large" icon={<ReloadOutlined />} onClick={handleReset} style={{ borderColor: '#722ed1', color: '#722ed1' }}>一键复位</Button>
-          </Space>
+          {isMobile ? (
+            <Row gutter={[8, 8]}>
+              <Col span={12}>
+                <Button type="primary" block icon={<PlayCircleOutlined />} onClick={handleOpenHall} style={{ height: 44, fontSize: 14 }}>开启展厅</Button>
+              </Col>
+              <Col span={12}>
+                <Button danger block icon={<PoweroffOutlined />} onClick={handleCloseHall} style={{ height: 44, fontSize: 14 }}>关闭展厅</Button>
+              </Col>
+              <Col span={12}>
+                <Button block icon={<SwapOutlined />} onClick={() => setSwitchModalVisible(true)} style={{ borderColor: '#faad14', color: '#faad14', height: 44, fontSize: 14 }}>切换专场</Button>
+              </Col>
+              <Col span={12}>
+                <Button block icon={<ReloadOutlined />} onClick={handleReset} style={{ borderColor: '#722ed1', color: '#722ed1', height: 44, fontSize: 14 }}>一键复位</Button>
+              </Col>
+            </Row>
+          ) : (
+            <Space size={12} wrap>
+              <Button type="primary" size="large" icon={<PlayCircleOutlined />} onClick={handleOpenHall}>开启展厅</Button>
+              <Button danger size="large" icon={<PoweroffOutlined />} onClick={handleCloseHall}>关闭展厅</Button>
+              <Button size="large" icon={<SwapOutlined />} onClick={() => setSwitchModalVisible(true)} style={{ borderColor: '#faad14', color: '#faad14' }}>切换专场</Button>
+              <Button size="large" icon={<ReloadOutlined />} onClick={handleReset} style={{ borderColor: '#722ed1', color: '#722ed1' }}>一键复位</Button>
+            </Space>
+          )}
         </Card>
 
         {/* 接待套餐快捷区 */}
         <Card
           title={<Text style={{ color: '#fff' }}><GiftOutlined style={{ marginRight: 6, color: '#faad14' }} />接待套餐快捷启动</Text>}
-          style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}
+          style={cardStyle}
+          styles={{ body: { padding } }}
         >
-          <Row gutter={[12, 12]}>
+          <Row gutter={[isMobile ? 8 : 12, isMobile ? 8 : 12]}>
             {presets.length === 0 ? (
               <Col span={24}><Text style={{ color: '#555' }}>暂无接待套餐，前往「接待套餐」页面创建</Text></Col>
             ) : (
               presets.map((preset: any) => (
                 <Col key={preset.id} xs={12} sm={8} md={6} lg={4}>
-                  <div style={{ background: '#141414', border: `1px solid ${preset.color || '#333'}44`, borderRadius: 10, padding: '12px 8px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 28, marginBottom: 6 }}>{PRESET_ICONS[preset.icon] || '🎯'}</div>
-                    <div style={{ color: '#fff', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{preset.name}</div>
-                    <div style={{ color: '#666', fontSize: 11, marginBottom: 10, minHeight: 28 }}>{preset.description}</div>
+                  <div style={{
+                    background: '#141414',
+                    border: `1px solid ${preset.color || '#333'}44`,
+                    borderRadius: 10,
+                    padding: isMobile ? '10px 6px' : '12px 8px',
+                    textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: isMobile ? 24 : 28, marginBottom: 4 }}>{PRESET_ICONS[preset.icon] || '🎯'}</div>
+                    <div style={{ color: '#fff', fontWeight: 600, fontSize: isMobile ? 12 : 13, marginBottom: 2 }}>{preset.name}</div>
+                    {!isMobile && (
+                      <div style={{ color: '#666', fontSize: 11, marginBottom: 8, minHeight: 28 }}>{preset.description}</div>
+                    )}
                     <Popconfirm title={`启动「${preset.name}」`} description="确认要启动此接待套餐吗？" onConfirm={() => handleTriggerPreset(preset)} okText="确认启动" cancelText="取消">
-                      <Button type="primary" size="small" loading={triggeringId === preset.id} style={{ background: preset.color || '#1677ff', border: 'none', width: '100%' }}>启动</Button>
+                      <Button
+                        type="primary"
+                        size={isMobile ? 'middle' : 'small'}
+                        loading={triggeringId === preset.id}
+                        style={{
+                          background: preset.color || '#1677ff',
+                          border: 'none',
+                          width: '100%',
+                          minHeight: isMobile ? 44 : 32,
+                          fontSize: isMobile ? 14 : 12,
+                        }}
+                      >
+                        启动
+                      </Button>
                     </Popconfirm>
                   </div>
                 </Col>
@@ -234,22 +303,36 @@ export default function Monitor() {
 
         {/* 设备在线状态 */}
         <Card
-          title={<Space><Text style={{ color: '#fff' }}>设备在线状态</Text><Tag color="blue" style={{ fontSize: 11 }}>每60秒刷新</Tag></Space>}
-          style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}
+          title={
+            <Space>
+              <Text style={{ color: '#fff' }}>设备在线状态</Text>
+              {!isMobile && <Tag color="blue" style={{ fontSize: 11 }}>每60秒刷新</Tag>}
+            </Space>
+          }
+          style={cardStyle}
+          styles={{ body: { padding } }}
         >
-          <Row gutter={[12, 12]}>
+          <Row gutter={[isMobile ? 6 : 12, isMobile ? 6 : 12]}>
             {devices.length === 0 ? (
               <Col span={24}><Text style={{ color: '#555' }}>暂无设备信息</Text></Col>
             ) : (
               devices.map((dev: any) => (
                 <Col key={dev.id} xs={12} sm={8} md={6}>
-                  <div style={{ background: '#141414', borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, border: `1px solid ${dev.online ? '#52c41a22' : '#ff4d4f22'}` }}>
+                  <div style={{
+                    background: '#141414',
+                    borderRadius: 8,
+                    padding: isMobile ? '8px 10px' : '10px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    border: `1px solid ${dev.online ? '#52c41a22' : '#ff4d4f22'}`,
+                  }}>
                     <Badge color={dev.online ? '#52c41a' : '#ff4d4f'} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ color: '#fff', fontSize: 13 }}>{dev.name}</div>
-                      <div style={{ color: '#555', fontSize: 11 }}>{dev.ip}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: '#fff', fontSize: isMobile ? 12 : 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dev.name}</div>
+                      {!isMobile && <div style={{ color: '#555', fontSize: 11 }}>{dev.ip}</div>}
                     </div>
-                    <Tag color={dev.online ? 'green' : 'red'} style={{ fontSize: 10 }}>{dev.online ? '在线' : '离线'}</Tag>
+                    <Tag color={dev.online ? 'green' : 'red'} style={{ fontSize: 10, margin: 0 }}>{dev.online ? '在线' : '离线'}</Tag>
                   </div>
                 </Col>
               ))
@@ -261,7 +344,8 @@ export default function Monitor() {
         {status.flowRunning && (
           <Card
             title={<Text style={{ color: '#fff' }}><ClockCircleOutlined style={{ marginRight: 6, color: '#1677ff' }} />执行中的流程</Text>}
-            style={{ background: '#1a1a1a', border: '1px solid #1677ff', borderRadius: 12 }}
+            style={{ ...cardStyle, border: '1px solid #1677ff' }}
+            styles={{ body: { padding } }}
           >
             <Text style={{ color: '#ccc' }}>{status.flowName}</Text>
             <Progress percent={status.flowProgress || 0} strokeColor={{ from: '#1677ff', to: '#52c41a' }} style={{ marginTop: 8 }} />
@@ -271,15 +355,25 @@ export default function Monitor() {
         {/* 实时日志 */}
         <Card
           title={<Text style={{ color: '#fff' }}>实时操作日志</Text>}
-          style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}
+          style={cardStyle}
           styles={{ body: { padding: 0 } }}
         >
-          <div ref={logRef} style={{ height: 280, overflowY: 'auto', background: '#0d1117', borderRadius: '0 0 12px 12px', padding: 12, fontFamily: 'monospace' }}>
-            {displayLogs.map((log: any, i: number) => (
-              <div key={log.id || i} style={{ marginBottom: 4, fontSize: 13 }}>
+          <div
+            ref={logRef}
+            style={{
+              height: isMobile ? 160 : 280,
+              overflowY: 'auto',
+              background: '#0d1117',
+              borderRadius: '0 0 12px 12px',
+              padding: isMobile ? 8 : 12,
+              fontFamily: 'monospace',
+            }}
+          >
+            {(isMobile ? displayLogs.slice(-6) : displayLogs).map((log: any, i: number) => (
+              <div key={log.id || i} style={{ marginBottom: 4, fontSize: isMobile ? 11 : 13 }}>
                 <Text style={{ color: '#555' }}>[{log.time || log.created_at}] </Text>
-                <Tag color={log.status === 'success' ? 'green' : log.status === 'error' ? 'red' : 'blue'} style={{ fontSize: 11 }}>{log.action}</Tag>
-                <Text style={{ color: '#888' }}>{log.source} — </Text>
+                <Tag color={log.status === 'success' ? 'green' : log.status === 'error' ? 'red' : 'blue'} style={{ fontSize: 10 }}>{log.action}</Tag>
+                {!isMobile && <Text style={{ color: '#888' }}>{log.source} — </Text>}
                 <Text style={{ color: log.status === 'error' ? '#ff4d4f' : '#ccc' }}>{log.result}</Text>
               </div>
             ))}
@@ -287,7 +381,15 @@ export default function Monitor() {
         </Card>
       </Space>
 
-      <Modal title="切换专场" open={switchModalVisible} onOk={handleSwitchScene} onCancel={() => setSwitchModalVisible(false)} confirmLoading={loading}>
+      <Modal
+        title="切换专场"
+        open={switchModalVisible}
+        onOk={handleSwitchScene}
+        onCancel={() => setSwitchModalVisible(false)}
+        confirmLoading={loading}
+        style={isMobile ? { top: 'auto', margin: 0, paddingBottom: 0 } : {}}
+        width={isMobile ? '100%' : 400}
+      >
         <Select style={{ width: '100%', marginTop: 8 }} placeholder="选择专场" value={selectedScene} onChange={setSelectedScene}>
           {scenes.map((s) => <Option key={s} value={s}>{s}</Option>)}
         </Select>

@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import {
   Card, Button, List, Typography, Space, Modal, Input, message,
-  Popconfirm, Tag, Switch, Empty,
+  Popconfirm, Tag, Switch, Empty, Grid, Alert,
 } from 'antd'
 import {
   PlusOutlined, PlayCircleOutlined, DeleteOutlined, EditOutlined,
-  ApartmentOutlined,
+  ApartmentOutlined, MobileOutlined,
 } from '@ant-design/icons'
 import FlowEditor from '../components/FlowEditor'
 import type { Node, Edge } from 'reactflow'
@@ -13,6 +13,7 @@ import type { NodeData } from '../components/FlowEditor/nodes/CustomNode'
 import { getFlows, createFlow, updateFlow, deleteFlow, executeFlow, toggleFlow } from '../api'
 
 const { Title, Text } = Typography
+const { useBreakpoint } = Grid
 
 interface Flow {
   id: string
@@ -29,6 +30,10 @@ export default function RoutesPage() {
   const [loading, setLoading] = useState(false)
   const [newModalVisible, setNewModalVisible] = useState(false)
   const [newName, setNewName] = useState('')
+
+  const screens = useBreakpoint()
+  const isMobile = !screens.md
+  const isTablet = screens.md && !screens.lg
 
   const fetchFlows = async () => {
     try {
@@ -98,10 +103,90 @@ export default function RoutesPage() {
     } catch { message.error('操作失败') }
   }
 
+  // Mobile: show flow list + tip to use desktop for editing
+  if (isMobile) {
+    return (
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Title level={5} style={{ color: '#fff', margin: 0 }}>
+            <ApartmentOutlined style={{ marginRight: 6, color: '#1677ff' }} />流程编辑器
+          </Title>
+          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setNewModalVisible(true)} style={{ minHeight: 36 }}>
+            新建
+          </Button>
+        </div>
+
+        <Alert
+          icon={<MobileOutlined />}
+          message="建议在桌面端编辑流程"
+          description="可视化流程编辑器在大屏上体验更佳。手机端可查看和执行已有流程。"
+          type="info"
+          showIcon
+          style={{ background: '#1a2a3a', border: '1px solid #1677ff44' }}
+        />
+
+        {flows.length === 0 ? (
+          <Card style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}>
+            <Empty description={<Text style={{ color: '#555' }}>暂无流程</Text>} style={{ padding: 32 }} />
+          </Card>
+        ) : (
+          flows.map((flow) => (
+            <Card
+              key={flow.id}
+              style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}
+              styles={{ body: { padding: '12px 14px' } }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={{ color: '#fff', fontWeight: 600, fontSize: 15 }}>{flow.name}</Text>
+                <Switch size="small" checked={flow.enabled} onChange={(v) => handleToggle(flow.id, v)} />
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                <Tag color={flow.enabled ? 'green' : 'default'} style={{ fontSize: 11 }}>{flow.enabled ? '启用' : '禁用'}</Tag>
+                <Tag color="blue" style={{ fontSize: 11 }}>{(flow.nodes || []).length} 节点</Tag>
+              </div>
+              <Space size={8}>
+                <Button
+                  size="middle"
+                  icon={<PlayCircleOutlined />}
+                  type="primary"
+                  ghost
+                  onClick={() => handleExecute(flow.id)}
+                  style={{ minHeight: 44 }}
+                >
+                  执行
+                </Button>
+                <Popconfirm title="确认删除此流程？" onConfirm={() => handleDelete(flow.id)}>
+                  <Button size="middle" icon={<DeleteOutlined />} danger style={{ minHeight: 44 }} />
+                </Popconfirm>
+              </Space>
+            </Card>
+          ))
+        )}
+
+        <Modal
+          title="新建流程"
+          open={newModalVisible}
+          onOk={handleNewFlow}
+          onCancel={() => setNewModalVisible(false)}
+          width="95%"
+        >
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="输入流程名称"
+            style={{ marginTop: 8, height: 44 }}
+            onPressEnter={handleNewFlow}
+          />
+        </Modal>
+      </Space>
+    )
+  }
+
+  // Tablet & Desktop: full editor
   return (
-    <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 104px)' }}>
+    <div style={{ display: 'flex', gap: 16, height: isTablet ? 'calc(100vh - 90px)' : 'calc(100vh - 104px)' }}>
       {/* 左侧流程列表 */}
-      <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ width: isTablet ? 200 : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Card
           title={<Text style={{ color: '#fff' }}><ApartmentOutlined style={{ marginRight: 6 }} />流程列表</Text>}
           extra={
@@ -152,7 +237,7 @@ export default function RoutesPage() {
       </div>
 
       {/* 右侧编辑器 */}
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         {currentFlow ? (
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

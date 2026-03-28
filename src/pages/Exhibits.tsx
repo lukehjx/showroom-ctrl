@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   Card, Table, Button, Space, Modal, Form, Input, Switch, message,
-  Tag, Typography, Popconfirm, Tooltip, Spin, Empty,
+  Tag, Typography, Popconfirm, Tooltip, Spin, Empty, Grid, Row, Col,
 } from 'antd'
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, QrcodeOutlined,
@@ -11,6 +11,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { getExhibits, createExhibit, updateExhibit, deleteExhibit } from '../api'
 
 const { Title, Text } = Typography
+const { useBreakpoint } = Grid
 
 interface Exhibit {
   id: string
@@ -35,6 +36,9 @@ export default function Exhibits() {
   const [editingExhibit, setEditingExhibit] = useState<Exhibit | null>(null)
   const [qrExhibit, setQrExhibit] = useState<Exhibit | null>(null)
   const [form] = Form.useForm()
+
+  const screens = useBreakpoint()
+  const isMobile = !screens.md
 
   const fetchExhibits = async () => {
     setLoading(true)
@@ -110,6 +114,7 @@ export default function Exhibits() {
     URL.revokeObjectURL(url)
   }
 
+  // Desktop table columns
   const columns = [
     { title: '名称', dataIndex: 'name', key: 'name', render: (v: string) => <Text style={{ color: '#fff' }}>{v}</Text> },
     { title: '关键词', dataIndex: 'keywords', key: 'keywords', render: (v: string) => v?.split(',').map((k: string) => <Tag key={k} color="blue" style={{ fontSize: 11 }}>{k}</Tag>) },
@@ -134,25 +139,88 @@ export default function Exhibits() {
     },
   ]
 
+  // Mobile card list
+  const MobileCardList = () => (
+    <Row gutter={[10, 10]}>
+      {exhibits.length === 0 ? (
+        <Col span={24}>
+          <Empty description={<Text style={{ color: '#555' }}>暂无展项</Text>} />
+        </Col>
+      ) : (
+        exhibits.map((exhibit) => (
+          <Col span={24} key={exhibit.id}>
+            <Card
+              style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}
+              styles={{ body: { padding: '12px 14px' } }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ color: '#fff', fontWeight: 600, fontSize: 15 }}>{exhibit.name}</Text>
+                  <div style={{ marginTop: 4 }}>
+                    <Tag color="purple" style={{ fontSize: 11 }}>{exhibit.position || '—'}</Tag>
+                    <Tag color={exhibit.autoNarration ? 'green' : 'default'} style={{ fontSize: 11 }}>
+                      {exhibit.autoNarration ? '自动讲解' : '手动讲解'}
+                    </Tag>
+                  </div>
+                  {exhibit.keywords && (
+                    <div style={{ marginTop: 6 }}>
+                      {exhibit.keywords.split(',').slice(0, 3).map((k) => (
+                        <Tag key={k} color="blue" style={{ fontSize: 10, marginBottom: 2 }}>{k}</Tag>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <Space size={6} style={{ marginLeft: 8, flexShrink: 0 }}>
+                  <Button
+                    size="middle"
+                    icon={<EditOutlined />}
+                    onClick={() => handleEdit(exhibit)}
+                    style={{ minHeight: 44, minWidth: 44 }}
+                  />
+                  <Button
+                    size="middle"
+                    icon={<QrcodeOutlined />}
+                    onClick={() => handleShowQR(exhibit)}
+                    style={{ borderColor: '#1677ff', color: '#1677ff', minHeight: 44, minWidth: 44 }}
+                  />
+                  <Popconfirm title="确认删除？" onConfirm={() => handleDelete(exhibit.id)}>
+                    <Button size="middle" icon={<DeleteOutlined />} danger style={{ minHeight: 44, minWidth: 44 }} />
+                  </Popconfirm>
+                </Space>
+              </div>
+            </Card>
+          </Col>
+        ))
+      )}
+    </Row>
+  )
+
   return (
     <Spin spinning={loading}>
-      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <Space direction="vertical" size={isMobile ? 10 : 16} style={{ width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Title level={4} style={{ color: '#fff', margin: 0 }}>
+          <Title level={isMobile ? 5 : 4} style={{ color: '#fff', margin: 0 }}>
             <AppstoreOutlined style={{ marginRight: 8, color: '#1677ff' }} />展项管理
           </Title>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleNew}>新建展项</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleNew} size={isMobile ? 'middle' : 'middle'} style={{ minHeight: 44 }}>
+            新建展项
+          </Button>
         </div>
-        <Card style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}>
-          <Table
-            dataSource={exhibits}
-            columns={columns}
-            rowKey="id"
-            pagination={{ pageSize: 10 }}
-            locale={{ emptyText: <Empty description={<Text style={{ color: '#555' }}>暂无展项</Text>} /> }}
-            style={{ background: 'transparent' }}
-          />
-        </Card>
+
+        {isMobile ? (
+          <MobileCardList />
+        ) : (
+          <Card style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12 }}>
+            <Table
+              dataSource={exhibits}
+              columns={columns}
+              rowKey="id"
+              pagination={{ pageSize: 10 }}
+              locale={{ emptyText: <Empty description={<Text style={{ color: '#555' }}>暂无展项</Text>} /> }}
+              style={{ background: 'transparent' }}
+            />
+          </Card>
+        )}
       </Space>
 
       {/* 编辑弹窗 */}
@@ -162,16 +230,19 @@ export default function Exhibits() {
         onOk={handleSave}
         onCancel={() => setModalVisible(false)}
         confirmLoading={loading}
+        width={isMobile ? '100%' : 480}
+        style={isMobile ? { top: 0, margin: 0, maxWidth: '100vw' } : {}}
+        styles={isMobile ? { body: { maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' } } : {}}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item label="展项名称" name="name" rules={[{ required: true }]}>
-            <Input placeholder="输入展项名称" />
+            <Input placeholder="输入展项名称" style={{ height: 44 }} />
           </Form.Item>
           <Form.Item label="关键词" name="keywords">
-            <Input placeholder="多个关键词用逗号分隔" />
+            <Input placeholder="多个关键词用逗号分隔" style={{ height: 44 }} />
           </Form.Item>
           <Form.Item label="绑定点位" name="position">
-            <Input placeholder="点位ID，如 POI_001" />
+            <Input placeholder="点位ID，如 POI_001" style={{ height: 44 }} />
           </Form.Item>
           <Form.Item label="自动讲解" name="autoNarration" valuePropName="checked">
             <Switch />
@@ -189,6 +260,7 @@ export default function Exhibits() {
           <Button key="close" onClick={() => setQrModalVisible(false)}>关闭</Button>,
         ]}
         centered
+        width={isMobile ? '95%' : 400}
       >
         <div style={{ textAlign: 'center', padding: '24px 0' }}>
           {qrExhibit && (
@@ -197,7 +269,7 @@ export default function Exhibits() {
                 <QRCodeSVG
                   id="exhibit-qr"
                   value={`http://36.134.146.69:8200/api/qrcode/${qrExhibit.id}`}
-                  size={200}
+                  size={180}
                   level="H"
                   includeMargin
                 />

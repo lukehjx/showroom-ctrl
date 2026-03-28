@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   Row, Col, Card, Button, Typography, Space, Modal, Form, Input,
   Select, message, Spin, Popconfirm, Progress, Tag, ColorPicker,
-  Empty,
+  Empty, Grid,
 } from 'antd'
 import {
   GiftOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
@@ -13,6 +13,7 @@ import { getPresets, createPreset, updatePreset, deletePreset, triggerPreset, ge
 const { Title, Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
+const { useBreakpoint } = Grid
 
 const ICON_OPTIONS = [
   { value: 'vip', label: '👑 VIP' },
@@ -58,6 +59,9 @@ export default function Presets() {
   const [running, setRunning] = useState<Record<string, RunningState>>({})
   const [form] = Form.useForm()
 
+  const screens = useBreakpoint()
+  const isMobile = !screens.md
+
   const fetchPresets = async () => {
     setLoading(true)
     try {
@@ -79,7 +83,6 @@ export default function Presets() {
     try {
       await triggerPreset(preset.id)
       message.success(`「${preset.name}」已启动`)
-      // 模拟进度轮询
       let p = 0
       const timer = setInterval(async () => {
         p += 10
@@ -145,15 +148,19 @@ export default function Presets() {
 
   return (
     <Spin spinning={loading}>
-      <Space direction="vertical" size={20} style={{ width: '100%' }}>
+      <Space direction="vertical" size={isMobile ? 12 : 20} style={{ width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <Title level={4} style={{ color: '#fff', margin: 0 }}>
+            <Title level={isMobile ? 5 : 4} style={{ color: '#fff', margin: 0 }}>
               <GiftOutlined style={{ marginRight: 8, color: '#faad14' }} />接待套餐
             </Title>
-            <Text style={{ color: '#888', fontSize: 12 }}>为不同类型的访客配置专属接待流程，一键启动全流程</Text>
+            {!isMobile && (
+              <Text style={{ color: '#888', fontSize: 12 }}>为不同类型的访客配置专属接待流程，一键启动全流程</Text>
+            )}
           </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleNew} size="large">新建套餐</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleNew} size={isMobile ? 'middle' : 'large'}>
+            {isMobile ? '新建' : '新建套餐'}
+          </Button>
         </div>
 
         {presets.length === 0 ? (
@@ -161,7 +168,7 @@ export default function Presets() {
             <Empty description={<Text style={{ color: '#555' }}>暂无接待套餐，点击「新建套餐」开始</Text>} style={{ padding: 48 }} />
           </Card>
         ) : (
-          <Row gutter={[20, 20]}>
+          <Row gutter={[isMobile ? 10 : 20, isMobile ? 10 : 20]}>
             {presets.map((preset) => {
               const state = running[preset.id]
               const isRunning = !!state
@@ -177,39 +184,46 @@ export default function Presets() {
                       transition: 'all 0.3s',
                       boxShadow: isRunning ? `0 0 20px ${preset.color}44` : 'none',
                     }}
-                    styles={{ body: { padding: '24px 20px' } }}
+                    styles={{ body: { padding: isMobile ? '16px 14px' : '24px 20px' } }}
                   >
                     {/* 图标 */}
                     <div style={{
-                      width: 72, height: 72, borderRadius: 36, margin: '0 auto 16px',
-                      background: `${preset.color}22`, border: `2px solid ${preset.color}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32,
+                      width: isMobile ? 56 : 72,
+                      height: isMobile ? 56 : 72,
+                      borderRadius: '50%',
+                      margin: '0 auto 12px',
+                      background: `${preset.color}22`,
+                      border: `2px solid ${preset.color}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: isMobile ? 24 : 32,
                     }}>
                       {ICON_MAP[preset.icon] || '🎯'}
                     </div>
 
                     {/* 名称 */}
-                    <Title level={4} style={{ color: '#fff', margin: '0 0 8px' }}>{preset.name}</Title>
+                    <Title level={isMobile ? 5 : 4} style={{ color: '#fff', margin: '0 0 6px' }}>{preset.name}</Title>
 
                     {/* 描述 */}
-                    <Text style={{ color: '#888', fontSize: 13, display: 'block', minHeight: 40, marginBottom: 12 }}>
+                    <Text style={{ color: '#888', fontSize: 12, display: 'block', minHeight: isMobile ? 0 : 40, marginBottom: 10 }}>
                       {preset.description}
                     </Text>
 
                     {/* 关联流程 */}
-                    <div style={{ marginBottom: 16, minHeight: 24 }}>
-                      {(preset.flows || []).slice(0, 3).map((fid: string) => {
-                        const flow = flows.find((f) => f.id === fid)
-                        return flow ? <Tag key={fid} color="blue" style={{ fontSize: 11 }}>{flow.name}</Tag> : null
-                      })}
-                      {(preset.flows || []).length === 0 && (
-                        <Tag color="default" style={{ fontSize: 11 }}>未绑定流程</Tag>
-                      )}
-                    </div>
+                    {!isMobile && (
+                      <div style={{ marginBottom: 14, minHeight: 24 }}>
+                        {(preset.flows || []).slice(0, 3).map((fid: string) => {
+                          const flow = flows.find((f) => f.id === fid)
+                          return flow ? <Tag key={fid} color="blue" style={{ fontSize: 11 }}>{flow.name}</Tag> : null
+                        })}
+                        {(preset.flows || []).length === 0 && (
+                          <Tag color="default" style={{ fontSize: 11 }}>未绑定流程</Tag>
+                        )}
+                      </div>
+                    )}
 
                     {/* 进度条 */}
                     {isRunning && (
-                      <div style={{ marginBottom: 12 }}>
+                      <div style={{ marginBottom: 10 }}>
                         <Progress
                           percent={state.progress}
                           strokeColor={preset.color}
@@ -222,8 +236,8 @@ export default function Presets() {
                       </div>
                     )}
 
-                    {/* 操作按钮 */}
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 12 }}>
+                    {/* 一键启动按钮 */}
+                    <div style={{ marginBottom: 10 }}>
                       <Popconfirm
                         title={`启动「${preset.name}」`}
                         description={<>即将启动此接待套餐的全部流程<br />确认继续？</>}
@@ -234,16 +248,15 @@ export default function Presets() {
                       >
                         <Button
                           type="primary"
-                          size="large"
                           icon={isDone ? <CheckCircleOutlined /> : <PlayCircleOutlined />}
                           loading={isRunning && !isDone}
                           disabled={isRunning}
+                          block
                           style={{
                             background: isDone ? '#52c41a' : preset.color,
                             border: 'none',
-                            flex: 1,
-                            height: 44,
-                            fontSize: 15,
+                            minHeight: 60,
+                            fontSize: 16,
                             fontWeight: 600,
                           }}
                         >
@@ -272,24 +285,26 @@ export default function Presets() {
         open={modalVisible}
         onOk={handleSave}
         onCancel={() => setModalVisible(false)}
-        width={520}
+        width={isMobile ? '100%' : 520}
+        style={isMobile ? { top: 0, margin: 0, maxWidth: '100vw', height: '100vh' } : {}}
+        styles={isMobile ? { body: { maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' } } : {}}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item label="套餐名称" name="name" rules={[{ required: true, message: '请输入套餐名称' }]}>
-            <Input placeholder="如：VIP接待、标准团队" size="large" />
+            <Input placeholder="如：VIP接待、标准团队" size="large" style={{ height: 44 }} />
           </Form.Item>
           <Form.Item label="描述" name="description">
             <TextArea placeholder="简短描述此套餐适用场景" rows={2} />
           </Form.Item>
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={isMobile ? 24 : 12}>
               <Form.Item label="图标" name="icon" rules={[{ required: true }]}>
-                <Select>
+                <Select style={{ height: 44 }}>
                   {ICON_OPTIONS.map((o) => <Option key={o.value} value={o.value}>{o.label}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={isMobile ? 24 : 12}>
               <Form.Item label="颜色" name="color">
                 <ColorPicker
                   presets={[{ label: '预设色', colors: DEFAULT_COLORS }]}

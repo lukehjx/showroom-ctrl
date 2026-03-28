@@ -1,15 +1,17 @@
-import { Suspense } from 'react'
-import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import { Suspense, useEffect, useState } from 'react'
+import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ConfigProvider, theme, Spin } from 'antd'
 import {
   DashboardOutlined, AppstoreOutlined, ApartmentOutlined,
-  RobotOutlined, FileTextOutlined, ThunderboltOutlined
+  RobotOutlined, FileTextOutlined, ThunderboltOutlined, SettingOutlined
 } from '@ant-design/icons'
 import MonitorPage from './pages/Monitor'
 import PresetsPage from './pages/Presets'
 import RoutesPage from './pages/Routes'
 import RobotsPage from './pages/Robots'
 import LogsPage from './pages/Logs'
+import SetupPage from './pages/Setup'
+import api from './api'
 
 const NAV_ITEMS = [
   { path: '/', label: '监控大屏', icon: <DashboardOutlined /> },
@@ -17,6 +19,7 @@ const NAV_ITEMS = [
   { path: '/routes', label: '流程管理', icon: <ApartmentOutlined /> },
   { path: '/robots', label: '机器人配置', icon: <RobotOutlined /> },
   { path: '/logs', label: '操作日志', icon: <FileTextOutlined /> },
+  { path: '/setup', label: '初始设置', icon: <SettingOutlined /> },
 ]
 
 function Sidebar() {
@@ -92,7 +95,48 @@ function Sidebar() {
   )
 }
 
+function HomeRedirect() {
+  const navigate = useNavigate()
+  const [checking, setChecking] = useState(true)
+
+  useEffect(() => {
+    api.get('/api/config').then((res: any) => {
+      const configs = res?.data
+      if (Array.isArray(configs)) {
+        const setupDone = configs.find((c: any) => c.key === 'setup.completed' && c.value === 'true')
+        if (!setupDone) {
+          navigate('/setup', { replace: true })
+          return
+        }
+      }
+      setChecking(false)
+    }).catch(() => {
+      setChecking(false)
+    })
+  }, [navigate])
+
+  if (checking) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+        <Spin size="large" />
+      </div>
+    )
+  }
+  return <MonitorPage />
+}
+
 function AppShell() {
+  const location = useLocation()
+  const isSetup = location.pathname === '/setup'
+
+  if (isSetup) {
+    return (
+      <Routes>
+        <Route path="/setup" element={<SetupPage />} />
+      </Routes>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
@@ -103,7 +147,8 @@ function AppShell() {
           </div>
         }>
           <Routes>
-            <Route path="/" element={<MonitorPage />} />
+            <Route path="/" element={<HomeRedirect />} />
+            <Route path="/monitor" element={<MonitorPage />} />
             <Route path="/presets" element={<PresetsPage />} />
             <Route path="/routes" element={<RoutesPage />} />
             <Route path="/robots" element={<RobotsPage />} />

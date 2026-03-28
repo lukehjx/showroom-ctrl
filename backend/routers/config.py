@@ -75,3 +75,23 @@ async def update_config(key: str, item: ConfigItem, db: AsyncSession = Depends(g
         await db.rollback()
         logger.error(f"Update config {key} error: {e}")
         return err(str(e))
+
+
+@router.put("")
+async def update_configs_batch(body: dict, db: AsyncSession = Depends(get_db)):
+    """Batch update configs via dict {key: value}"""
+    try:
+        for key, value in body.items():
+            result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
+            cfg = result.scalar_one_or_none()
+            if cfg:
+                cfg.value = str(value)
+                cfg.updated_at = datetime.now()
+            else:
+                db.add(SystemConfig(key=key, value=str(value), description=None, updated_at=datetime.now()))
+        await db.commit()
+        return ok({"updated": len(body)})
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Batch update configs error: {e}")
+        return err(str(e))

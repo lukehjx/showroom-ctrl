@@ -27,7 +27,9 @@ async def chat_input(body: ChatInput):
             created_at=datetime.now()
         )
 
-        # 获取或创建会话
+        # 获取或创建会话（企微Bot和机器人共享，通过 robot_sn 区分展厅）
+        wecom_user = body.wecom_user_key or ""
+        req_operator = body.operator or ("bot" if wecom_user else "robot")
         async with async_session() as session:
             result = await session.execute(
                 select(ChatSession).where(ChatSession.robot_sn == robot_sn).order_by(ChatSession.id.desc()).limit(1)
@@ -35,10 +37,29 @@ async def chat_input(body: ChatInput):
             chat_session = result.scalar_one_or_none()
 
             if not chat_session:
-                chat_session = ChatSession(robot_sn=robot_sn, state="idle")
+                chat_session = ChatSession(
+                    robot_sn=robot_sn, state="idle",
+                    operator=req_operator,
+                    wecom_user_key=wecom_user if wecom_user else None,
+                )
                 session.add(chat_session)
                 await session.commit()
                 await session.refresh(chat_session)
+            else:
+                # 同步 operator（接管逻辑：谁发消息谁接管，除非对方明确不释放）
+                needs_update = False
+                if wecom_user and chat_session.operator != "bot":
+                    chat_session.operator = "bot"
+                    chat_session.wecom_user_key = wecom_user
+                    needs_update = True
+                elif not wecom_user and req_operator == "robot" and chat_session.operator != "robot":
+                    # 机器人发 robot_arrived 等事件时接管
+                    if event in ("robot_arrived", "robot_speaking", "robot_idle"):
+                        chat_session.operator = "robot"
+                        needs_update = True
+                if needs_update:
+                    await session.commit()
+                    await session.refresh(chat_session)
 
         response_data = {"event": event, "robot_sn": robot_sn, "result": None}
 
@@ -346,6 +367,62 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
 
         elif intent == "go_charge":
             return {"action": "go_charge", "message": "好嘞，去充电了，一会儿回来！⚡"}
+
+        elif intent == "switch_scene":
+            scene_name = extra.get("scene_name", "") or extra.get("raw_text", "")
+            from models import CloudScene, CurrentScene
+            from tcp_service import send_tcp
+            from config import get_config as _gc
+            # 按名称模糊匹配专场
+            async with async_session() as session:
+                result = await session.execute(
+                    select(CloudScene).where(CloudScene.name.contains(scene_name)).limit(1)
+                )
+                matched = result.scalar_one_or_none()
+                # 如果没匹配到，返回专场列表让用户选
+                if not matched:
+                    all_scenes = await session.execute(select(CloudScene).order_by(CloudScene.scene_id))
+                    scene_list = all_scenes.scalars().all()
+                    names = "、".join(f"《{s.name}》" for s in scene_list[:8])
+                    return {"action": "switch_scene", "message": f"没找到「{scene_name}」，现有专场：{names}，请说「切换到XX专场」"}
+
+            # 发 TCP 切换指令
+            tcp_host = await _gc("tcp.host") or "112.20.77.18"
+            tcp_port = int(await _gc("tcp.port") or "8989")
+            cmd = f"2_update_{matched.scene_id}"
+            try:
+                ok = await send_tcp(tcp_host, tcp_port, cmd)
+            except Exception as e:
+                logger.error(f"Switch scene TCP error: {e}")
+                ok = False
+
+            # 更新本地 current_scene
+            async with async_session() as session:
+                sc_row = await session.execute(select(CurrentScene).limit(1))
+                sc = sc_row.scalar_one_or_none()
+                if sc:
+                    sc.scene_id = matched.scene_id
+                    sc.updated_at = datetime.now()
+                    await session.commit()
+
+            status = "🎬 已切换" if ok else "📡 指令已发送"
+            return {"action": "switch_scene", "scene_id": matched.scene_id, "scene_name": matched.name,
+                    "tcp_cmd": cmd, "message": f"{status}：{matched.name}！"}
+
+        elif intent == "takeover":
+            target_operator = extra.get("operator", "bot")
+            # 更新 session 的 operator 字段
+            async with async_session() as session:
+                cs = await session.get(ChatSession, chat_session.id)
+                if cs:
+                    cs.operator = target_operator
+                    cs.last_activity_at = datetime.now()
+                    await session.commit()
+            if target_operator == "bot":
+                msg = "好的，我来接管控制，现在由我操作展厅～"
+            else:
+                msg = "已切换为机器人自主模式，我会配合机器人走位来操作～"
+            return {"action": "takeover", "operator": target_operator, "message": msg}
 
         elif intent == "device_control":
             # 设备控制：发送 TCP/HTTP 命令

@@ -137,7 +137,8 @@ class ChatSession(Base):
     state = Column(String, default='idle')
     current_exhibit_id = Column(Integer)
     shown_resources = Column(JSONB)
-    operator = Column(String, default='bot')        # bot or robot
+    operator = Column(String, default='bot')
+    last_selected_index = Column(Integer, default=0)  # 最后投放的文件序号(0-based)        # bot or robot
     wecom_user_key = Column(String)                 # 企微用户标识
     last_activity_at = Column(DateTime, default=datetime.now)
     created_at = Column(DateTime, default=datetime.now)

@@ -356,6 +356,12 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
             except Exception as e:
                 logger.error(f"TCP cast error: {e}")
                 msg = f"《{title}》投放时遇到点问题，请稍后再试～"
+            # 记录最后选中的 index (0-based)
+            async with async_session() as session:
+                cs2 = await session.get(ChatSession, chat_session.id)
+                if cs2:
+                    cs2.last_selected_index = idx
+                    await session.commit()
 
             return {"action": "select", "index": index, "resource_id": resource_id, "terminal_id": terminal_id, "tcp_cmd": cmd, "message": msg}
 
@@ -408,6 +414,78 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
             status = "🎬 已切换" if ok else "📡 指令已发送"
             return {"action": "switch_scene", "scene_id": matched.scene_id, "scene_name": matched.name,
                     "tcp_cmd": cmd, "message": f"{status}：{matched.name}！"}
+
+
+        elif intent == "narrate":
+            index = extra.get("index")
+            async with async_session() as session:
+                cs = await session.get(ChatSession, chat_session.id)
+                shown = cs.shown_resources if cs else None
+
+            target_item = None
+            if index is not None and shown:
+                idx = int(index) - 1
+                if 0 <= idx < len(shown):
+                    target_item = shown[idx]
+            elif shown and len(shown) > 0:
+                async with async_session() as session:
+                    cs2 = await session.get(ChatSession, chat_session.id)
+                    last_idx = (cs2.last_selected_index or 0) if cs2 else 0
+                target_item = shown[last_idx] if last_idx < len(shown) else shown[0]
+
+            if not target_item:
+                return {"action": "narrate", "message": "还没有选中文件，请先说有哪些文件，再说讲解第X个～"}
+
+            resource_id = target_item.get("resource_id")
+            title = target_item.get("title", "该内容")
+
+            from sqlalchemy import text as _sql_text2
+            async with async_session() as session:
+                row = await session.execute(
+                    _sql_text2(
+                        "SELECT COALESCE(NULLIF(raw_data->>'commentary', ''), NULLIF(raw_data->>'allCommentary', ''), NULL) as narration "
+                        "FROM cloud_resources WHERE resource_id = :rid LIMIT 1"
+                    ),
+                    {"rid": resource_id}
+                )
+                r = row.fetchone()
+                narration = r[0] if r else None
+
+            if not narration:
+                return {"action": "narrate", "message": f"《{title}》暂无讲解词，可以在云平台上添加～"}
+
+            from config import get_config as _gc
+            robot_sn_cfg = await _gc("robot.sn") or robot_sn
+            app_key = await _gc("robot.app_key")
+            app_secret = await _gc("robot.app_secret")
+            orion_base = await _gc("robot.orion_api_base") or "https://openapi.orionstar.com"
+
+            tts_ok = False
+            if app_key and app_secret:
+                try:
+                    import httpx, time, hashlib
+                    ts = str(int(time.time() * 1000))
+                    sign = hashlib.md5(f"{app_key}{ts}{app_secret}".encode()).hexdigest()
+                    async with httpx.AsyncClient(timeout=10) as cli:
+                        resp = await cli.post(
+                            f"{orion_base}/openapi/robot/tts/v2",
+                            json={"robotSn": robot_sn_cfg, "text": narration[:500], "priority": 3},
+                            headers={"appKey": app_key, "timestamp": ts, "sign": sign}
+                        )
+                        tts_ok = resp.json().get("code") == 0
+                except Exception as e:
+                    logger.error(f"Robot TTS error: {e}")
+
+            if tts_ok:
+                msg = f"好的，正在为您讲解《{title}》～"
+            elif not app_key:
+                preview = narration[:200] + ("..." if len(narration) > 200 else "")
+                msg = f"《{title}》讲解词：\n{preview}"
+            else:
+                msg = f"机器人语音播报失败，讲解词：\n{narration[:150]}..."
+
+            return {"action": "narrate", "resource_id": resource_id, "title": title,
+                    "has_narration": True, "tts_ok": tts_ok, "message": msg}
 
         elif intent == "takeover":
             target_operator = extra.get("operator", "bot")

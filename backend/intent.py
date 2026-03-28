@@ -23,6 +23,7 @@ INTENT_KEYWORDS = {
     'switch_scene': ['切换专场', '换专场', '切换到', '切换成', '启用专场', '换成', '切到'],
     # 接管控制
     'takeover': ['我来控制', '接管', '切换到我', '我接管', '手动控制', 'bot接管', '机器人接管'],
+    'narrate': ['讲解一下', '讲解', '介绍一下', '介绍', '讲讲', '说说', '讲一下', '播报讲解', '讲解词', '念一下', '念出来'],
 }
 
 # 设备控制关键词到命令名称的映射
@@ -41,8 +42,19 @@ SELECT_INDEX_MAP = {
 }
 
 
+NARRATE_TRIGGERS = ['讲解一下', '讲解', '介绍一下', '介绍', '讲讲', '说说', '讲一下', '播报讲解', '讲解词', '念一下', '念出来']
+
 def keyword_match(text: str) -> tuple[str, dict]:
     """关键词匹配意图"""
+    # 优先检测讲解意图（避免被 select 抢先）
+    for nkw in NARRATE_TRIGGERS:
+        if nkw in text:
+            idx = None
+            for k, v in SELECT_INDEX_MAP.items():
+                if k in text:
+                    idx = v
+                    break
+            return 'narrate', {'index': idx}
     for intent, keywords in INTENT_KEYWORDS.items():
         for kw in keywords:
             if kw in text:
@@ -59,6 +71,13 @@ def keyword_match(text: str) -> tuple[str, dict]:
                     if not scene_name:
                         scene_name = text
                     extra = {"scene_name": scene_name, "raw_text": text}
+                elif intent == 'narrate':
+                    idx = None
+                    for k, v in SELECT_INDEX_MAP.items():
+                        if k in text:
+                            idx = v
+                            break
+                    extra = {'index': idx}
                 elif intent == 'takeover':
                     # 判断接管方向
                     if any(x in text for x in ['bot接管', '我来控制', '手动控制', '切换到我', '我接管']):

@@ -42,8 +42,8 @@ async def chat_input(body: ChatInput):
 
         response_data = {"event": event, "robot_sn": robot_sn, "result": None}
 
-        if event == "voice_input":
-            text = params.get("text", "")
+        if event in ("voice_input", "text"):
+            text = params.get("text", "") or body.text or ""
             if not text:
                 return err("Missing text in params")
 

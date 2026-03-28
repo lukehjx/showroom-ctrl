@@ -85,8 +85,28 @@ async def delete_route(route_id: int):
 @router.post("/routes/{route_id}/trigger")
 async def trigger_route(route_id: int):
     try:
-        asyncio.create_task(execute_route(route_id, triggered_by="api"))
-        return ok({"route_id": route_id, "status": "triggered"})
+        # 先同步创建 execution 记录，再异步执行步骤
+        from models import FlowExecution
+        from database import async_session
+        from datetime import datetime
+        async with async_session() as session:
+            execution = FlowExecution(
+                route_id=route_id,
+                triggered_by="api",
+                status="running",
+                started_at=datetime.now()
+            )
+            session.add(execution)
+            await session.commit()
+            await session.refresh(execution)
+            execution_id = execution.id
+
+        async def _run():
+            from lane_engine import execute_route as _exec
+            await _exec(route_id, triggered_by="api", execution_id=execution_id)
+
+        asyncio.create_task(_run())
+        return ok({"route_id": route_id, "status": "triggered", "execution_id": execution_id})
     except Exception as e:
         logger.error(f"Trigger route {route_id} error: {e}")
         return err(str(e))

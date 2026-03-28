@@ -210,19 +210,20 @@ async def execute_lane(lane_id: int, execution_id: int):
         logger.info(f"Step {step.id} ({step.action_type}) completed with status {status}")
 
 
-async def execute_route(route_id: int, triggered_by: str = "api") -> int:
+async def execute_route(route_id: int, triggered_by: str = "api", execution_id: Optional[int] = None) -> int:
     """执行路由（所有Lane）"""
-    execution = FlowExecution(
-        route_id=route_id,
-        triggered_by=triggered_by,
-        status="running",
-        started_at=datetime.now()
-    )
-    async with async_session() as session:
-        session.add(execution)
-        await session.commit()
-        await session.refresh(execution)
-        execution_id = execution.id
+    if execution_id is None:
+        execution = FlowExecution(
+            route_id=route_id,
+            triggered_by=triggered_by,
+            status="running",
+            started_at=datetime.now()
+        )
+        async with async_session() as session:
+            session.add(execution)
+            await session.commit()
+            await session.refresh(execution)
+            execution_id = execution.id
 
     try:
         async with async_session() as session:

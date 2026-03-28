@@ -56,7 +56,10 @@ async def start_wecom_bot():
             logger.info("WecomBot starting...")
             await bot.run()
         except ImportError:
-            logger.warning("aibot not installed, using mock mode")
+            logger.warning("aibot not installed, entering mock standby mode")
+            # mock 模式：保持进程运行，等待 aibot 安装后重启
+            while True:
+                await asyncio.sleep(60)
         except Exception as e:
             logger.error(f"WecomBot error: {e}")
 
@@ -70,3 +73,14 @@ def start_bot_background():
     loop = asyncio.get_event_loop()
     _bot_task = loop.create_task(start_wecom_bot())
     logger.info("WecomBot task created")
+
+
+if __name__ == "__main__":
+    import sys
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    logger.info("Starting WecomBot as standalone process...")
+    asyncio.run(start_wecom_bot())

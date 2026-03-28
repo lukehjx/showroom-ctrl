@@ -125,8 +125,9 @@ class RobotUpdate(BaseModel):
 # Chat
 class ChatInput(BaseModel):
     event: str
-    robot_sn: Optional[str] = None
-    params: Optional[dict] = None
+    robot_sn: str = ""
+    params: dict = {}
+    text: str = ""  # 直接传文本，兼容企微Bot
 
 
 # Scene switch

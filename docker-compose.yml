@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: showroom
+      POSTGRES_USER: showroom
+      POSTGRES_PASSWORD: showroom123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - showroom_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U showroom"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - showroom_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - "8200:8200"
+      - "19888:19888"
+    environment:
+      DATABASE_URL: postgresql://showroom:showroom123@postgres:5432/showroom
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - showroom_net
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  showroom_net:
+    driver: bridge

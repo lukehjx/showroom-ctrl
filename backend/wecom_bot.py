@@ -28,6 +28,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 ws_client = WSClient(WSClientOptions(bot_id=BOT_ID, secret=BOT_SECRET))
+last_frame = None  # 记录最后一个会话 frame，用于主动推送
 log.info(f"Showroom Bot starting, BotID: {BOT_ID}")
 
 
@@ -94,4 +95,31 @@ async def on_message(frame):
 
 if __name__ == "__main__":
     log.info("Starting Showroom WecomBot...")
+    # 启动企微推送轮询（每3秒检查 bot_notifications 表）
+    import asyncio, asyncpg
+
+    async def poll_notifications():
+        DB_URL = os.environ.get("DATABASE_URL", "postgresql://showroom:showroom123@127.0.0.1:5432/showroom")
+        # 转成 asyncpg 格式
+        db_url = DB_URL.replace("postgresql://", "postgres://").replace("+asyncpg", "")
+        while True:
+            try:
+                conn = await asyncpg.connect(db_url, timeout=5)
+                rows = await conn.fetch(
+                    "SELECT id, message FROM bot_notifications WHERE sent=FALSE ORDER BY id LIMIT 5"
+                )
+                for row in rows:
+                    try:
+                        await ws_client.send_text(row["message"])
+                        log.info(f"Bot pushed notification: {row['message'][:50]}")
+                    except Exception as e:
+                        log.warning(f"Bot push failed: {e}")
+                    await conn.execute("UPDATE bot_notifications SET sent=TRUE WHERE id=$1", row["id"])
+                await conn.close()
+            except Exception as e:
+                log.debug(f"Poll notifications error: {e}")
+            await asyncio.sleep(3)
+
+    loop = asyncio.get_event_loop()
+    loop.create_task(poll_notifications())
     ws_client.run()

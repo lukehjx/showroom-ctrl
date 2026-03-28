@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #0f1628;
+  --bg-card: rgba(15, 22, 40, 0.85);
+  --bg-sidebar: #060a14;
+  --border-glow: rgba(0, 212, 255, 0.2);
+  --border-subtle: rgba(0, 212, 255, 0.08);
+  --text-primary: #e8f4fd;
+  --text-secondary: #8fa3bc;
+  --text-muted: #4a6080;
+  --accent-blue: #00d4ff;
+  --accent-purple: #7c3aed;
+  --accent-green: #00ff88;
+  --accent-orange: #ff6b35;
+  --danger: #ff4757;
+  --success: #00ff88;
+  --warning: #ffd32a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: var(--bg-primary);
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(124, 58, 237, 0.07) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 20%, rgba(0, 212, 255, 0.07) 0%, transparent 55%);
+  min-height: 100vh;
+  color: var(--text-primary);
+  font-family: 'Inter', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: rgba(0, 212, 255, 0.2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 212, 255, 0.4); }
+
+/* ── Tech Card ── */
+.tech-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-glow);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.tech-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 24px rgba(0, 212, 255, 0.12);
+}
+
+/* ── Status Dot ── */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.status-dot.online {
+  background: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+  animation: pulse-green 2s infinite;
+}
+
+.status-dot.offline {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+}
+
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 6px var(--accent-green); }
+  50% { opacity: 0.7; transform: scale(1.3); box-shadow: 0 0 12px var(--accent-green); }
+}
+
+/* ── Page Transition ── */
+.page-fade-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.page-fade-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+/* ── Glow Text ── */
+.glow-blue { color: var(--accent-blue); text-shadow: 0 0 12px rgba(0, 212, 255, 0.6); }
+.glow-green { color: var(--accent-green); text-shadow: 0 0 12px rgba(0, 255, 136, 0.6); }
+.glow-red { color: var(--danger); text-shadow: 0 0 12px rgba(255, 71, 87, 0.6); }
+.glow-purple { color: var(--accent-purple); text-shadow: 0 0 12px rgba(124, 58, 237, 0.6); }
+
+/* ── Terminal Log ── */
+.terminal-log {
+  background: #060a14;
+  border: 1px solid rgba(0, 255, 136, 0.15);
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.terminal-log .log-line { color: rgba(0, 255, 136, 0.85); }
+.terminal-log .log-line:nth-child(odd) { color: rgba(0, 212, 255, 0.75); }
+.terminal-log .log-time { color: rgba(143, 163, 188, 0.6); margin-right: 8px; }
+
+/* ── Ant override ── */
+.ant-layout { background: transparent !important; }
+.ant-layout-content { background: transparent !important; }
+.ant-table-wrapper .ant-table { background: transparent !important; }
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: rgba(0, 212, 255, 0.05) !important;
+  border-color: var(--border-glow) !important;
+  color: var(--text-secondary) !important;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  border-color: var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr:hover > td {
+  background: rgba(0, 212, 255, 0.04) !important;
+}
+.ant-modal-content {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-glow) !important;
+}

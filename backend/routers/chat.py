@@ -214,6 +214,76 @@ async def chat_input(body: ChatInput):
         return err(str(e))
 
 
+
+async def _terminal_file_hint(terminal_id: int, robot_sn: str) -> str:
+    """到达某终端后，查文件列表并生成提示语，同时写 bot_notifications"""
+    from sqlalchemy import text as _th_sql
+    from models import CurrentScene
+    try:
+        async with async_session() as sc_s:
+            sc_row = await sc_s.execute(select(CurrentScene).limit(1))
+            sc = sc_row.scalar_one_or_none()
+            scene_id = sc.scene_id if sc else None
+
+        async with async_session() as fl_s:
+            if scene_id:
+                fl_rows = await fl_s.execute(
+                    _th_sql(
+                        "SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名'), resource_id "
+                        "FROM cloud_resources WHERE (raw_data->>'_terminal_id')::int = :tid "
+                        "AND (raw_data->>'_scene_id')::int = :sid ORDER BY sort"
+                    ),
+                    {"tid": terminal_id, "sid": scene_id}
+                )
+            else:
+                fl_rows = await fl_s.execute(
+                    _th_sql(
+                        "SELECT COALESCE(title, file_name, raw_data->>'resourceName', '未命名'), resource_id "
+                        "FROM cloud_resources WHERE (raw_data->>'_terminal_id')::int = :tid ORDER BY sort"
+                    ),
+                    {"tid": terminal_id}
+                )
+            rows = fl_rows.fetchall()
+
+        # 同时更新 shown_resources
+        shown = [{"title": r[0], "resource_id": r[1], "terminal_id": terminal_id} for r in rows]
+        if shown:
+            async with async_session() as upd_s:
+                from models import ChatSession
+                from sqlalchemy import select as _sel
+                cs_r = await upd_s.execute(
+                    _sel(ChatSession).where(ChatSession.robot_sn == robot_sn).order_by(ChatSession.id.desc()).limit(1)
+                )
+                cs_obj = cs_r.scalar_one_or_none()
+                if cs_obj:
+                    cs_obj.shown_resources = shown
+                    await upd_s.commit()
+
+        titles = [r[0] for r in rows]
+        if titles:
+            items = "、".join(f"第{i+1}个《{t}》" for i, t in enumerate(titles[:3]))
+            suffix = f"等{len(titles)}个内容" if len(titles) > 3 else ""
+            return f"这里有{len(titles)}个展示内容：{items}{suffix}。说「第X个」播放，「讲解一下」听介绍。"
+        else:
+            return "这里暂无展示内容，说「下一个」继续往前走。"
+    except Exception as e:
+        logger.warning(f"_terminal_file_hint error: {e}")
+        return "说「有哪些文件」查看当前内容。"
+
+
+async def _push_bot_notification(robot_sn: str, message: str):
+    """写 bot_notifications 表，让企微Bot轮询推送"""
+    try:
+        from sqlalchemy import text as _pbn_sql
+        async with async_session() as _ns:
+            await _ns.execute(
+                _pbn_sql("INSERT INTO bot_notifications (robot_sn, message) VALUES (:sn, :msg)"),
+                {"sn": robot_sn, "msg": message}
+            )
+            await _ns.commit()
+    except Exception as e:
+        logger.warning(f"Push bot notification failed: {e}")
+
 async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: ChatSession, text: str = "") -> dict:
     """根据意图执行相应动作"""
     try:
@@ -234,7 +304,11 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
                         cs.current_exhibit_id = first_terminal.terminal_id
                         cs.last_activity_at = datetime.now()
                         await session.commit()
-                return {"action": "start_tour", "terminal_id": first_terminal.terminal_id, "terminal_name": first_terminal.name, "message": f"好嘞！我们从【{first_terminal.name}】开始参观～跟我走吧！🐾"}
+                file_hint = await _terminal_file_hint(first_terminal.terminal_id, robot_sn)
+                welcome = f"好嘞！我们从【{first_terminal.name}】开始参观！🐾 {file_hint}"
+                await _push_bot_notification(robot_sn, welcome)
+                return {"action": "start_tour", "terminal_id": first_terminal.terminal_id,
+                        "terminal_name": first_terminal.name, "message": welcome}
             return {"action": "start_tour", "message": "展馆终端数据还没同步，请联系工作人员哦～"}
 
         elif intent == "next_exhibit":
@@ -257,7 +331,10 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
                     cs.current_exhibit_id = next_t.terminal_id
                     cs.last_activity_at = datetime.now()
                     await session.commit()
-                    return {"action": "next_exhibit", "terminal_id": next_t.terminal_id, "terminal_name": next_t.name, "message": f"跟我来！下一站：【{next_t.name}】🚶"}
+                    file_hint = await _terminal_file_hint(next_t.terminal_id, robot_sn)
+                    msg = f"跟我来！下一站：【{next_t.name}】🚶 {file_hint}"
+                    await _push_bot_notification(robot_sn, msg)
+                    return {"action": "next_exhibit", "terminal_id": next_t.terminal_id, "terminal_name": next_t.name, "message": msg}
             return {"action": "next_exhibit", "message": "已经是最后一个展位啦！说「回到入口」可以回到起点，或者说「有哪些文件」看当前内容～"}
 
         elif intent == "prev_exhibit":
@@ -275,7 +352,10 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
                         cs.current_exhibit_id = prev_t.terminal_id
                         cs.last_activity_at = datetime.now()
                         await session.commit()
-                        return {"action": "prev_exhibit", "terminal_id": prev_t.terminal_id, "terminal_name": prev_t.name, "message": f"好的，往回走！上一站：【{prev_t.name}】🔙"}
+                        file_hint = await _terminal_file_hint(prev_t.terminal_id, robot_sn)
+                        msg = f"好的，往回走！上一站：【{prev_t.name}】🔙 {file_hint}"
+                        await _push_bot_notification(robot_sn, msg)
+                        return {"action": "prev_exhibit", "terminal_id": prev_t.terminal_id, "terminal_name": prev_t.name, "message": msg}
             return {"action": "prev_exhibit", "message": "已经是第一个展位了，没有更前面啦～"}
 
         elif intent == "go_home":

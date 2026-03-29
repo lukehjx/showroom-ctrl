@@ -1,9 +1,11 @@
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ConfigProvider, theme, Spin } from 'antd'
 import {
   DashboardOutlined, AppstoreOutlined, ApartmentOutlined, UserOutlined,
-  FileTextOutlined, ThunderboltOutlined, SettingOutlined, SoundOutlined
+  FileTextOutlined, ThunderboltOutlined, SettingOutlined, SoundOutlined,
+  CalendarOutlined, ClockCircleOutlined, CompassOutlined, EnvironmentOutlined,
+  NotificationOutlined, EyeOutlined, TeamOutlined
 } from '@ant-design/icons'
 import MonitorPage from './pages/Monitor'
 import PresetsPage from './pages/Presets'
@@ -13,17 +15,29 @@ import SetupPage from './pages/Setup'
 import EmployeesPage from './pages/Employees'
 import TourStopsPage from './pages/TourStops'
 import ExhibitScriptsPage from './pages/ExhibitScripts'
+import NavPositionsPage from './pages/NavPositions'
+import AppointmentsPage from './pages/Appointments'
+import SchedulesPage from './pages/Schedules'
+import NotifyGroupsPage from './pages/NotifyGroups'
+import VisitorLogsPage from './pages/VisitorLogs'
+import WecomUsersPage from './pages/WecomUsers'
 import api from './api'
 
 const NAV_ITEMS = [
-  { path: '/', label: '监控大屏', icon: <DashboardOutlined /> },
+  { path: '/monitor', label: '系统监控', icon: <DashboardOutlined /> },
   { path: '/presets', label: '接待套餐', icon: <AppstoreOutlined /> },
-  { path: '/routes', label: '流程管理', icon: <ApartmentOutlined /> },
-  { path: '/tour-stops', label: '导览路线', icon: <ApartmentOutlined /> },
   { path: '/exhibit-scripts', label: '展项讲解', icon: <SoundOutlined /> },
-  { path: '/logs', label: '操作日志', icon: <FileTextOutlined /> },
+  { path: '/routes', label: '流程管理', icon: <ApartmentOutlined /> },
+  { path: '/appointments', label: '预约管理', icon: <CalendarOutlined /> },
+  { path: '/schedules', label: '定时任务', icon: <ClockCircleOutlined /> },
+  { path: '/tour-stops', label: '导览路线', icon: <CompassOutlined /> },
+  { path: '/nav-positions', label: '点位映射', icon: <EnvironmentOutlined /> },
+  { path: '/notify-groups', label: '通知群配置', icon: <NotificationOutlined /> },
   { path: '/employees', label: '人脸库', icon: <UserOutlined /> },
-  { path: '/setup', label: '初始设置', icon: <SettingOutlined /> },
+  { path: '/visitor-logs', label: '访客记录', icon: <EyeOutlined /> },
+  { path: '/wecom-users', label: '企微用户', icon: <TeamOutlined /> },
+  { path: '/logs', label: '操作日志', icon: <FileTextOutlined /> },
+  { path: '/setup', label: '系统设置', icon: <SettingOutlined /> },
 ]
 
 function Sidebar() {
@@ -53,24 +67,22 @@ function Sidebar() {
         </div>
       </div>
 
-      <nav style={{ flex: 1, padding: '12px 8px' }}>
+      <nav style={{ flex: 1, padding: '12px 8px', overflowY: 'auto' }}>
         {NAV_ITEMS.map(item => {
-          const active = item.path === '/'
-            ? location.pathname === '/'
-            : location.pathname.startsWith(item.path)
+          const active = location.pathname === item.path || location.pathname.startsWith(item.path + '/')
           return (
             <NavLink key={item.path} to={item.path} style={{ textDecoration: 'none' }}>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                padding: '10px 14px', borderRadius: 8, marginBottom: 2,
+                padding: '9px 14px', borderRadius: 8, marginBottom: 2,
                 borderLeft: active ? '3px solid var(--accent-blue)' : '3px solid transparent',
                 background: active ? 'linear-gradient(90deg, rgba(0,212,255,0.1), transparent)' : 'transparent',
                 color: active ? 'var(--accent-blue)' : 'var(--text-secondary)',
-                fontSize: 14, fontWeight: active ? 600 : 400,
+                fontSize: 13, fontWeight: active ? 600 : 400,
                 transition: 'all 0.15s ease',
                 cursor: 'pointer',
               }}>
-                <span style={{ fontSize: 16 }}>{item.icon}</span>
+                <span style={{ fontSize: 15 }}>{item.icon}</span>
                 <span>{item.label}</span>
               </div>
             </NavLink>
@@ -95,7 +107,6 @@ function Sidebar() {
 
 function HomeRedirect() {
   const navigate = useNavigate()
-  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
     api.get('/api/config').then((res: any) => {
@@ -107,20 +118,17 @@ function HomeRedirect() {
           return
         }
       }
-      setChecking(false)
+      navigate('/monitor', { replace: true })
     }).catch(() => {
-      setChecking(false)
+      navigate('/monitor', { replace: true })
     })
   }, [navigate])
 
-  if (checking) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-        <Spin size="large" />
-      </div>
-    )
-  }
-  return <MonitorPage />
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+      <Spin size="large" />
+    </div>
+  )
 }
 
 function AppShell() {
@@ -153,6 +161,12 @@ function AppShell() {
             <Route path="/employees" element={<EmployeesPage />} />
             <Route path="/tour-stops" element={<TourStopsPage />} />
             <Route path="/exhibit-scripts" element={<ExhibitScriptsPage />} />
+            <Route path="/nav-positions" element={<NavPositionsPage />} />
+            <Route path="/appointments" element={<AppointmentsPage />} />
+            <Route path="/schedules" element={<SchedulesPage />} />
+            <Route path="/notify-groups" element={<NotifyGroupsPage />} />
+            <Route path="/visitor-logs" element={<VisitorLogsPage />} />
+            <Route path="/wecom-users" element={<WecomUsersPage />} />
           </Routes>
         </Suspense>
       </main>

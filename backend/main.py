@@ -152,3 +152,42 @@ if __name__ == "__main__":
         reload=False,
         log_level="info"
     )
+
+# bot_notifications CRUD
+from sqlalchemy import select as sa_select, update as sa_update
+from database import async_session as _async_session
+
+@app.get("/api/bot-notifications")
+async def list_bot_notifications(sent: str = None, limit: int = 50):
+    async with _async_session() as session:
+        from sqlalchemy import text as sa_text
+        if sent == "false":
+            result = await session.execute(
+                sa_text("SELECT id, robot_sn, message, created_at, sent FROM bot_notifications WHERE sent=false ORDER BY created_at ASC LIMIT :limit"),
+                {"limit": limit}
+            )
+        elif sent == "true":
+            result = await session.execute(
+                sa_text("SELECT id, robot_sn, message, created_at, sent FROM bot_notifications WHERE sent=true ORDER BY created_at DESC LIMIT :limit"),
+                {"limit": limit}
+            )
+        else:
+            result = await session.execute(
+                sa_text("SELECT id, robot_sn, message, created_at, sent FROM bot_notifications ORDER BY created_at DESC LIMIT :limit"),
+                {"limit": limit}
+            )
+        rows = result.mappings().all()
+        return {"code": 0, "data": [dict(r) for r in rows]}
+
+@app.patch("/api/bot-notifications/{nid}")
+async def update_bot_notification(nid: int, body: dict):
+    async with _async_session() as session:
+        from sqlalchemy import text as sa_text
+        if "sent" in body:
+            await session.execute(
+                sa_text("UPDATE bot_notifications SET sent=:sent WHERE id=:id"),
+                {"sent": body["sent"], "id": nid}
+            )
+            await session.commit()
+    return {"code": 0, "message": "ok"}
+

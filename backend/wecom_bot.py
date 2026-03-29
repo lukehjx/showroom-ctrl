@@ -83,7 +83,7 @@ async def _poll_notifications(ws_client):
                         pass
         except Exception as e:
             logger.debug(f"Poll error: {e}")
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
 
 def main():

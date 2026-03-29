@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from 
 import { ConfigProvider, theme, Spin } from 'antd'
 import {
   DashboardOutlined, AppstoreOutlined, ApartmentOutlined, UserOutlined,
-  RobotOutlined, FileTextOutlined, ThunderboltOutlined, SettingOutlined
+  RobotOutlined, FileTextOutlined, ThunderboltOutlined, SettingOutlined, EnvironmentOutlined
 } from '@ant-design/icons'
 import MonitorPage from './pages/Monitor'
 import PresetsPage from './pages/Presets'
@@ -13,6 +13,7 @@ import LogsPage from './pages/Logs'
 import SetupPage from './pages/Setup'
 import EmployeesPage from './pages/Employees'
 import TourStopsPage from './pages/TourStops'
+import NavPositionsPage from './pages/NavPositions'
 import api from './api'
 
 const NAV_ITEMS = [
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { path: '/presets', label: '接待套餐', icon: <AppstoreOutlined /> },
   { path: '/routes', label: '流程管理', icon: <ApartmentOutlined /> },
   { path: '/tour-stops', label: '导览路线', icon: <RobotOutlined style={{}} /> },
+  { path: '/nav-positions', label: '点位映射', icon: <EnvironmentOutlined /> },
   { path: '/robots', label: '机器人配置', icon: <RobotOutlined /> },
   { path: '/logs', label: '操作日志', icon: <FileTextOutlined /> },
   { path: '/employees', label: '人脸库', icon: <UserOutlined /> },
@@ -159,6 +161,7 @@ function AppShell() {
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/employees" element={<EmployeesPage />} />
             <Route path="/tour-stops" element={<TourStopsPage />} />
+            <Route path="/nav-positions" element={<NavPositionsPage />} />
           </Routes>
         </Suspense>
       </main>

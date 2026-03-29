@@ -354,7 +354,7 @@ export default function SetupPage() {
                     }}>
                       <div style={{ fontSize: 24, marginBottom: 4 }}>{item.icon}</div>
                       <div style={{ fontSize: 22, fontWeight: 700, color: item.color }}>
-                        {syncResult[item.key] ?? '—'}
+                        {(syncResult[item.key]?.count ?? syncResult[item.key]) ?? '—'}
                       </div>
                       <div style={{ fontSize: 12, color: '#8fa3bc' }}>{item.label}</div>
                     </div>

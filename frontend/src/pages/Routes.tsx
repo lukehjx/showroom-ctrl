@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Button, Modal, Form, Input, Switch, Tag, Spin, Popconfirm, App } from 'antd'
+import { Button, Modal, Form, Input, Select, Switch, Tag, Spin, Popconfirm, App } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, PlayCircleOutlined,
   BranchesOutlined, SaveOutlined, PlusCircleOutlined
@@ -29,53 +29,176 @@ const ACTION_TYPES = [
 const getActionDef = (type: string) =>
   ACTION_TYPES.find(a => a.type === type) || { type, label: type, emoji: '⚙️', color: '#8fa3bc' }
 
-// ─── 节点配置 Modal ──────────────────────────────────────────────────────────
+// ─── 节点配置 Modal ──────────────────────────────────────────────
 function StepConfigModal({
-  open, actionType, onOk, onCancel
+  open, actionType, initialConfig, onOk, onCancel
 }: {
   open: boolean
   actionType: string
+  initialConfig?: any
   onOk: (cfg: { description: string; action_config: any; wait_timeout?: number }) => void
   onCancel: () => void
 }) {
   const [form] = Form.useForm()
+  const [scenes, setScenes] = useState<any[]>([])
+  const [terminals, setTerminals] = useState<any[]>([])
+  const [resources, setResources] = useState<any[]>([])
+  const [commands, setCommands] = useState<any[]>([])
+  const [pois, setPois] = useState<string[]>([])
+  const [tcpMode, setTcpMode] = useState<'preset'|'custom'>('preset')
+  const [showRawJson, setShowRawJson] = useState(false)
   const def = getActionDef(actionType)
+
+  useEffect(() => {
+    if (!open) return
+    if (initialConfig) {
+      const cfg = typeof initialConfig === 'string' ? (() => { try { return JSON.parse(initialConfig) } catch { return {} } })() : (initialConfig || {})
+      form.setFieldsValue({ ...cfg, narrate_text: cfg.text, wait_seconds: cfg.seconds })
+      if (cfg.host) setTcpMode('custom')
+    }
+    api.get('/api/scenes').then((r: any) => setScenes(r.data?.data || []))
+    api.get('/api/terminals').then((r: any) => setTerminals(r.data?.data || []))
+    api.get('/api/commands').then((r: any) => setCommands(r.data?.data || []))
+    api.get('/api/robot/map-positions').then((r: any) => setPois(r.data?.pois || [])).catch(() => {})
+  }, [open])
+
+  const onTerminalChange = (terminalId: number) => {
+    form.setFieldsValue({ resource_id: undefined })
+    api.get(`/api/terminals/${terminalId}/resources`).then((r: any) => setResources(r.data?.data || []))
+  }
 
   const handleOk = async () => {
     const vals = await form.validateFields()
+    let cfg: any = {}
+    if (actionType === 'robot_nav') cfg = { poi_name: vals.poi_name }
+    else if (actionType === 'robot_speak') cfg = { text: vals.text }
+    else if (actionType === 'media_play') cfg = { scene_id: vals.scene_id, terminal_id: vals.terminal_id, resource_id: vals.resource_id }
+    else if (actionType === 'scene_switch') cfg = { scene_id: vals.scene_id }
+    else if (actionType === 'digital_human') cfg = { terminal_id: vals.terminal_id, command: vals.command }
+    else if (actionType === 'narrate') cfg = { text: vals.narrate_text }
+    else if (actionType === 'tcp_send') {
+      if (tcpMode === 'preset') cfg = { command_id: vals.command_id }
+      else cfg = { host: vals.host || '112.20.77.18', port: Number(vals.port) || 8989, data: vals.data }
+    }
+    else if (actionType === 'http_request') cfg = { url: vals.url, method: vals.method || 'GET' }
+    else { try { cfg = JSON.parse(vals.raw_json || '{}') } catch { cfg = {} } }
+
     onOk({
       description: vals.description || def.label,
-      action_config: vals.action_config ? (() => {
-        try { return JSON.parse(vals.action_config) } catch { return { raw: vals.action_config } }
-      })() : {},
-      wait_timeout: vals.wait_timeout ? Number(vals.wait_timeout) : undefined,
+      action_config: cfg,
+      wait_timeout: actionType === 'wait' ? Number(vals.wait_seconds || 3) : undefined,
     })
     form.resetFields()
+    setShowRawJson(false)
   }
+
+  const s = { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e0e8ff' }
+  const lbl = (t: string) => <span style={{color:'#8fa3bc'}}>{t}</span>
 
   return (
     <Modal
-      title={<span>{def.emoji} 配置 {def.label}</span>}
-      open={open}
-      onOk={handleOk}
-      onCancel={() => { form.resetFields(); onCancel() }}
-      okText="保存步骤"
-      cancelText="取消"
+      title={<span style={{color:'#e0e8ff'}}>{def.emoji} 配置 {def.label}</span>}
+      open={open} onOk={handleOk}
+      onCancel={() => { form.resetFields(); setShowRawJson(false); onCancel() }}
+      okText="保存步骤" cancelText="取消" width={460}
+      styles={{ body: { background: '#0d1b2a', padding: '16px 24px' } }}
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 12 }}>
-        <Form.Item label="描述" name="description">
-          <Input placeholder={`如：${def.label}步骤`} />
+      <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
+        <Form.Item label={lbl("步骤描述")} name="description">
+          <Input placeholder={`如：${def.label}步骤`} style={s} />
         </Form.Item>
+
+        {actionType === 'robot_nav' && (
+          <Form.Item label={lbl("目标位置（POI）")} name="poi_name" rules={[{required:true,message:'请填写POI名'}]}>
+            {pois.length > 0
+              ? <Select placeholder="选择点位" options={pois.map(p=>({label:p,value:p}))} />
+              : <Input placeholder="机器人尚未上报点位，请手填" style={s} />}
+          </Form.Item>
+        )}
+
+        {actionType === 'robot_speak' && (
+          <Form.Item label={lbl("播报文字")} name="text" rules={[{required:true}]}>
+            <Input.TextArea rows={3} placeholder="如：欢迎参观思德科技展厅" style={s} />
+          </Form.Item>
+        )}
+
+        {actionType === 'media_play' && (<>
+          <Form.Item label={lbl("场景")} name="scene_id" rules={[{required:true}]}>
+            <Select placeholder="选择场景" options={scenes.map((sc:any)=>({label:sc.scene_name||sc.name,value:sc.id||sc.scene_id}))} onChange={()=>form.setFieldsValue({terminal_id:undefined,resource_id:undefined})} />
+          </Form.Item>
+          <Form.Item label={lbl("终端")} name="terminal_id" rules={[{required:true}]}>
+            <Select placeholder="选择终端" onChange={onTerminalChange} options={terminals.map((t:any)=>({label:t.terminal_name||t.name,value:t.id||t.terminal_id}))} />
+          </Form.Item>
+          <Form.Item label={lbl("资源")} name="resource_id" rules={[{required:true}]}>
+            <Select placeholder={resources.length?'选择资源':'先选终端'} options={resources.map((r:any)=>({label:r.title||r.file_name,value:r.id||r.resource_id}))} />
+          </Form.Item>
+        </>)}
+
+        {actionType === 'scene_switch' && (
+          <Form.Item label={lbl("目标场景")} name="scene_id" rules={[{required:true}]}>
+            <Select placeholder="选择场景" options={scenes.map((sc:any)=>({label:sc.scene_name||sc.name,value:sc.id||sc.scene_id}))} />
+          </Form.Item>
+        )}
+
+        {actionType === 'digital_human' && (<>
+          <Form.Item label={lbl("终端")} name="terminal_id" rules={[{required:true}]}>
+            <Select placeholder="选择终端" options={terminals.map((t:any)=>({label:t.terminal_name||t.name,value:t.id||t.terminal_id}))} />
+          </Form.Item>
+          <Form.Item label={lbl("指令")} name="command" rules={[{required:true}]}>
+            <Select options={[{label:'进入',value:'Enter'},{label:'离开',value:'Leave'},{label:'待机',value:'Standby'},{label:'播放',value:'Play'},{label:'暂停',value:'Pause'}]} />
+          </Form.Item>
+        </>)}
+
+        {actionType === 'narrate' && (
+          <Form.Item label={lbl("讲解指令")} name="narrate_text" rules={[{required:true}]}>
+            <Select options={[{label:'播放',value:'播放。'},{label:'暂停',value:'暂停。'},{label:'继续',value:'继续。'},{label:'停止',value:'停止。'},{label:'自动讲解',value:'自动讲解。'}]} />
+          </Form.Item>
+        )}
+
+        {actionType === 'tcp_send' && (<>
+          <Form.Item label={lbl("发送方式")}>
+            <Select value={tcpMode} onChange={v=>setTcpMode(v as any)} options={[{label:'选已有指令',value:'preset'},{label:'自定义',value:'custom'}]} style={{width:'100%'}} />
+          </Form.Item>
+          {tcpMode === 'preset'
+            ? <Form.Item label={lbl("指令")} name="command_id" rules={[{required:true}]}>
+                <Select placeholder="选择指令" options={commands.filter((c:any)=>c.protocol_type==='tcp').map((c:any)=>({label:`${c.group_name||''} / ${c.name}`,value:c.id}))} />
+              </Form.Item>
+            : <>
+                <Form.Item label={lbl("Host")} name="host"><Input placeholder="112.20.77.18" style={s} /></Form.Item>
+                <Form.Item label={lbl("Port")} name="port"><Input placeholder="8989" type="number" style={s} /></Form.Item>
+                <Form.Item label={lbl("数据")} name="data" rules={[{required:true}]}><Input placeholder="如：2_85_142_1156" style={s} /></Form.Item>
+              </>}
+        </>)}
+
+        {actionType === 'http_request' && (<>
+          <Form.Item label={lbl("Method")} name="method" initialValue="GET">
+            <Select options={[{label:'GET',value:'GET'},{label:'POST',value:'POST'}]} style={{width:120}} />
+          </Form.Item>
+          <Form.Item label={lbl("URL")} name="url" rules={[{required:true}]}>
+            <Input placeholder="http://..." style={s} />
+          </Form.Item>
+        </>)}
+
         {actionType === 'wait' && (
-          <Form.Item label="等待秒数" name="wait_timeout" rules={[{ required: true, message: '请填写等待秒数' }]}>
-            <Input type="number" min={1} placeholder="如：3" suffix="秒" />
+          <Form.Item label={lbl("等待秒数")} name="wait_seconds" rules={[{required:true}]} initialValue={3}>
+            <Input type="number" min={1} max={300} suffix="秒" style={s} />
           </Form.Item>
         )}
-        {actionType !== 'wait' && (
-          <Form.Item label="动作配置（JSON）" name="action_config">
-            <Input.TextArea rows={3} placeholder='如：{"target":"机器人A"}' />
+
+        {!['robot_nav','robot_speak','media_play','scene_switch','digital_human','narrate','tcp_send','http_request','wait'].includes(actionType) && (
+          <Form.Item label={lbl("配置（JSON）")} name="raw_json">
+            <Input.TextArea rows={3} placeholder='{"key":"value"}' style={s} />
           </Form.Item>
         )}
+
+        <div style={{marginTop:8}}>
+          <Button type="link" size="small" style={{color:'#8fa3bc',padding:0}} onClick={()=>setShowRawJson(!showRawJson)}>
+            {showRawJson ? '▲ 收起原始JSON' : '▼ 查看/编辑原始JSON（高级）'}
+          </Button>
+          {showRawJson && <Form.Item name="raw_json_adv" style={{marginTop:8}}>
+            <Input.TextArea rows={4} placeholder='直接编辑JSON' style={s} />
+          </Form.Item>}
+        </div>
       </Form>
     </Modal>
   )

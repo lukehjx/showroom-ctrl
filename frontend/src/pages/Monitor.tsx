@@ -7,7 +7,7 @@ import {
 import api, { triggerPreset, refreshDeviceStatus } from '../api'
 
 interface DeviceStatus { id: number; terminal_id: number; terminal_name: string; ip: string; is_online: boolean; response_ms?: number }
-interface Robot { id: number; name: string; sn: string; enabled: boolean }
+interface Robot { id: number; name?: string; robot_sn?: string; sn?: string; enabled?: boolean; status?: string; battery_level?: number }
 interface Preset { id: number; name: string; description: string; icon: string; color: string; enabled: boolean }
 interface LogItem { id: number; action: string; source: string; result: string; created_at: string }
 interface CurrentScene { scene_id: number; scene_name: string; updated_at: string }

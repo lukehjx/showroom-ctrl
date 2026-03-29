@@ -53,6 +53,7 @@ export default function SetupPage() {
           robot_sn: cfg['robot.sn'] || 'MC1BCN2K100262058CA0',
           robot_app_key: cfg['robot.app_key'] || '',
           robot_app_secret: cfg['robot.app_secret'] || '',
+          robot_wake_word: cfg['robot.wake_word'] || '旺财',
         })
       }
     }).catch(() => {})
@@ -107,6 +108,7 @@ export default function SetupPage() {
       const configs: Record<string, string> = { 'robot.sn': vals.robot_sn }
       if (vals.robot_app_key) configs['robot.app_key'] = vals.robot_app_key
       if (vals.robot_app_secret) configs['robot.app_secret'] = vals.robot_app_secret
+      if (vals.robot_wake_word) configs['robot.wake_word'] = vals.robot_wake_word
       await putConfigs(configs)
       message.success('机器人配置已保存')
       setCurrent(4)
@@ -391,6 +393,7 @@ export default function SetupPage() {
               robot_sn: 'MC1BCN2K100262058CA0',
               robot_app_key: '',
               robot_app_secret: '',
+              robot_wake_word: '旺财',
             }}>
               <Form.Item label={<span style={labelStyle}>机器人 SN</span>} name="robot_sn" rules={[{ required: true, message: '请填写机器人SN' }]}>
                 <Input style={inputStyle} placeholder="设备序列号" />
@@ -402,6 +405,13 @@ export default function SetupPage() {
                 <Form.Item label={<span style={labelStyle}>App Secret（可空）</span>} name="robot_app_secret">
                   <Input.Password style={inputStyle} placeholder="可选" />
                 </Form.Item>
+              <Form.Item
+                label={<span style={labelStyle}>唤醒词</span>}
+                name="robot_wake_word"
+                extra={<span style={{ color: "#8fa3bc", fontSize: 12 }}>当前唤醒词，APK重启后生效，默认：旺财</span>}
+              >
+                <Input style={inputStyle} placeholder="旺财" />
+              </Form.Item>
               </div>
             </Form>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>

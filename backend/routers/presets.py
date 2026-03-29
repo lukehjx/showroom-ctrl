@@ -164,3 +164,33 @@ async def trigger_preset(preset_id: int):
     except Exception as e:
         logger.error(f"Trigger preset {preset_id} error: {e}")
         return err(str(e))
+
+
+@router.delete('/{preset_id}/routes')
+async def clear_preset_routes(preset_id: int):
+    """清空套餐绑定的所有流程"""
+    try:
+        from sqlalchemy import delete as sa_delete
+        async with async_session() as session:
+            await session.execute(
+                sa_delete(PresetRoute).where(PresetRoute.preset_id == preset_id)
+            )
+            await session.commit()
+            return ok({'deleted': True, 'preset_id': preset_id})
+    except Exception as e:
+        return err(str(e))
+
+
+@router.delete('/{preset_id}/routes/{route_binding_id}')
+async def delete_preset_route(preset_id: int, route_binding_id: int):
+    """删除套餐中某条绑定流程"""
+    try:
+        async with async_session() as session:
+            pr = await session.get(PresetRoute, route_binding_id)
+            if not pr or pr.preset_id != preset_id:
+                return err('Not found', 404)
+            await session.delete(pr)
+            await session.commit()
+            return ok({'deleted': route_binding_id})
+    except Exception as e:
+        return err(str(e))

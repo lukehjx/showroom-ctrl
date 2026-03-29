@@ -108,10 +108,6 @@ from routers import config, sync, terminals, exhibits, routes, chat, scenes, log
 from routers import exhibit_scripts as exhibit_scripts_module
 from routers import ws_robot, robot_status, employees
 from routers import tour_stops as tour_stops_module
-from routers import appointments as appointments_module
-from routers import notify_groups as notify_groups_module
-from routers import wecom_users as wecom_users_module
-from routers import visitor_logs as visitor_logs_module
 from routers import presets, schedules, kiosk, reception, qrcode, device_status
 
 app.include_router(config.router)
@@ -135,9 +131,15 @@ app.include_router(robot_status.router)
 app.include_router(employees.router)
 app.include_router(tour_stops_module.router)
 app.include_router(exhibit_scripts_module.router)
+from routers import appointments as appointments_module
+from routers import wecom_users as wecom_users_module
+from routers import notify_groups as notify_groups_module
+from routers import auto_tour as auto_tour_module
+from routers import visitor_logs as visitor_logs_module
 app.include_router(appointments_module.router)
-app.include_router(notify_groups_module.router)
 app.include_router(wecom_users_module.router)
+app.include_router(notify_groups_module.router)
+app.include_router(auto_tour_module.router)
 app.include_router(visitor_logs_module.router)
 
 

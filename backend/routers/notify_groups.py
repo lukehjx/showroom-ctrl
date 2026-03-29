@@ -1,100 +1,83 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from database import async_session
-from schemas import ok, err
+from sqlalchemy import text
+from pydantic import BaseModel
+from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["notify-groups"])
+router = APIRouter(prefix="/api/notify-groups", tags=["notify_groups"])
 
 
-@router.get("/notify-groups")
-async def list_notify_groups():
-    try:
-        from sqlalchemy import text
-        async with async_session() as session:
-            result = await session.execute(
-                text("SELECT * FROM notify_groups ORDER BY id")
-            )
-            rows = result.mappings().all()
-            data = []
-            for r in rows:
-                d = dict(r)
-                for k in ['created_at', 'updated_at']:
-                    if k in d and d[k] is not None:
-                        d[k] = str(d[k])
-                data.append(d)
-        return ok(data)
-    except Exception as e:
-        logger.error(f"List notify groups error: {e}")
-        return err(str(e))
+class NotifyGroupCreate(BaseModel):
+    name: str
+    chat_id: str
+    enabled: bool = True
+    notify_types: str = "all"
 
 
-@router.post("/notify-groups")
-async def create_notify_group(data: dict):
-    try:
-        from sqlalchemy import text
-        name = data.get("name", "")
-        chat_id = data.get("chat_id", "")
-        if not name or not chat_id:
-            raise HTTPException(400, "name and chat_id are required")
-        async with async_session() as session:
-            result = await session.execute(
-                text("""INSERT INTO notify_groups (name, chat_id, enabled, created_at, updated_at)
-                     VALUES (:name, :chat_id, TRUE, NOW(), NOW()) RETURNING *"""),
-                {"name": name, "chat_id": chat_id}
-            )
-            row = result.mappings().one()
-            await session.commit()
-            d = dict(row)
-            for k in ['created_at', 'updated_at']:
-                if k in d and d[k] is not None:
-                    d[k] = str(d[k])
-        return ok(d)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Create notify group error: {e}")
-        return err(str(e))
+class NotifyGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    enabled: Optional[bool] = None
+    notify_types: Optional[str] = None
 
 
-@router.patch("/notify-groups/{group_id}")
-async def update_notify_group(group_id: int, data: dict):
-    try:
-        from sqlalchemy import text
-        fields = []
-        values = {"id": group_id}
-        for k in ['name', 'chat_id', 'enabled', 'notify_types']:
-            if k in data:
-                fields.append(f"{k}=:{k}")
-                values[k] = data[k]
-        if not fields:
-            raise HTTPException(400, "No fields to update")
-        fields.append("updated_at=NOW()")
-        async with async_session() as session:
-            await session.execute(
-                text(f"UPDATE notify_groups SET {', '.join(fields)} WHERE id=:id"),
-                values
-            )
-            await session.commit()
-        return ok({"status": "ok"})
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Update notify group error: {e}")
-        return err(str(e))
+@router.get("")
+async def list_groups():
+    async with async_session() as db:
+        result = await db.execute(text("SELECT * FROM notify_groups ORDER BY created_at DESC"))
+        rows = result.mappings().fetchall()
+    return {"code": 0, "data": [dict(r) for r in rows]}
 
 
-@router.delete("/notify-groups/{group_id}")
-async def delete_notify_group(group_id: int):
-    try:
-        from sqlalchemy import text
-        async with async_session() as session:
-            await session.execute(
-                text("DELETE FROM notify_groups WHERE id=:id"),
-                {"id": group_id}
-            )
-            await session.commit()
-        return ok({"status": "ok"})
-    except Exception as e:
-        logger.error(f"Delete notify group error: {e}")
-        return err(str(e))
+@router.post("")
+async def create_group(data: NotifyGroupCreate):
+    n = data.name.replace("'", "''")
+    c = data.chat_id.replace("'", "''")
+    t = data.notify_types.replace("'", "''")
+    async with async_session() as db:
+        result = await db.execute(text(
+            f"\n            INSERT INTO notify_groups (name, chat_id, enabled, notify_types)\n            VALUES ('{n}', '{c}', {data.enabled}, '{t}')\n            ON CONFLICT (chat_id) DO UPDATE SET name='{n}', enabled={data.enabled}, updated_at=NOW()\n            RETURNING id\n        "
+        ))
+        new_id = result.scalar()
+        await db.commit()
+    return {"code": 0, "data": {"id": new_id}}
+
+
+@router.patch("/{group_id}")
+async def update_group(group_id: int, data: NotifyGroupUpdate):
+    updates = []
+
+    if data.name:
+        updates.append(f"name='{data.name.replace(chr(39), chr(39)*2)}'")
+
+    if data.enabled is not None:
+        updates.append(f"enabled={data.enabled}")
+
+    if data.notify_types:
+        updates.append(f"notify_types='{data.notify_types.replace(chr(39), chr(39)*2)}'")
+
+    if not updates:
+        return {"code": 0}
+
+    updates.append("updated_at=NOW()")
+    async with async_session() as db:
+        await db.execute(text(f"UPDATE notify_groups SET {', '.join(updates)} WHERE id={group_id}"))
+        await db.commit()
+    return {"code": 0}
+
+
+@router.delete("/{group_id}")
+async def delete_group(group_id: int):
+    async with async_session() as db:
+        await db.execute(text(f"DELETE FROM notify_groups WHERE id={group_id}"))
+        await db.commit()
+    return {"code": 0}
+
+
+async def get_enabled_chat_ids() -> list:
+    """获取所有启用的群ID列表，供推送使用"""
+    async with async_session() as db:
+        result = await db.execute(text("SELECT chat_id FROM notify_groups WHERE enabled=true"))
+        rows = result.fetchall()
+    return [r[0] for r in rows]

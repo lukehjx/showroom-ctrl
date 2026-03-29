@@ -59,6 +59,10 @@ async def chat_input(body: ChatInput):
             action_result = await handle_intent(intent, extra, robot_sn, chat_session)
             response_data["result"] = action_result
 
+            # 生成人话回复文本
+            reply_text = await _generate_reply(intent, extra, action_result, text)
+            response_data["reply"] = reply_text
+
             # 机器人回复后进入对话模式30秒（只要有动作响应就激活）
             await _set_listening_mode(robot_sn, True)
 
@@ -271,3 +275,60 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
     except Exception as e:
         logger.error(f"Handle intent {intent} error: {e}")
         return {"action": intent, "error": str(e)}
+
+
+async def _generate_reply(intent: str, extra: dict, action_result: dict, text: str) -> str:
+    """根据意图生成人话回复"""
+    from config import get_config
+    from openai import AsyncOpenAI
+
+    INTENT_REPLIES = {
+        "list_files": None,  # 由 handle_intent 的 result 构建
+        "next_exhibit": "好的，我们去下一个展项！",
+        "prev_exhibit": "好的，回到上一个展项。",
+        "start_tour": "好的，我带您开始参观！",
+        "go_home": "好的，我们回到入口！",
+        "go_charge": "好的，我去充电了，一会儿见！",
+        "repeat": "好的，我再说一遍。",
+        "stop": "好的，停止了。",
+        "continue": "好的，继续。",
+        "select": None,  # 由 handle_intent 的 result 构建
+    }
+
+    if intent in INTENT_REPLIES and INTENT_REPLIES[intent] is not None:
+        return INTENT_REPLIES[intent]
+
+    if intent == "list_files":
+        count = action_result.get("count", 0)
+        if count > 0:
+            return f"当前展位共有 {count} 个内容，说「第一个」「第二个」等来选择播放。"
+        return "当前展位暂无内容资源。"
+
+    if intent == "select":
+        index = extra.get("index", 1)
+        return f"好的，正在播放第{index}个内容。"
+
+    # unknown 意图 → Qwen 闲聊
+    try:
+        qwen_key = await get_config("ai.qwen_key") or "sk-845c78e1c9a749ba901c5ce3d68f4a33"
+        qwen_model = await get_config("ai.qwen_model") or "qwen-plus-latest"
+        bot_name = await get_config("bot.name") or "旺财"
+        location = await get_config("bot.location") or "南京"
+        system_prompt = await get_config("bot.system_prompt") or f"你是展厅导览机器人{bot_name}，请用简短活泼的语气回复（不超过150字）。"
+        system_prompt = system_prompt.replace("{name}", bot_name).replace("{location}", location)
+
+        client = AsyncOpenAI(api_key=qwen_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+        response = await client.chat.completions.create(
+            model=qwen_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text}
+            ],
+            temperature=0.7,
+            max_tokens=300,
+            extra_body={"enable_search": True}
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f"Qwen llm_chat failed: {e}")
+        return f"您好！我是{await get_config('bot.name') or '旺财'}，有什么需要帮助的吗？您可以说「开始参观」「有哪些文件」等指令。"

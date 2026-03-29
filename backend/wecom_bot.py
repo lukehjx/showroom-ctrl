@@ -1,10 +1,10 @@
 """
-展厅智控 企微Bot - v3
-WSClient.run() 自己管理 event loop，用同步模式启动
+展厅智控 企微Bot - v4 (async handler + reply_stream with uuid stream_id)
 """
 import logging
 import asyncio
 import threading
+import uuid
 import httpx
 import sys
 
@@ -16,8 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_config_sync(key: str) -> str:
-    """同步获取配置（从 DB 通过 httpx 同步请求）"""
+def _get_config(key: str) -> str:
     try:
         resp = httpx.get(f"http://127.0.0.1:8200/api/config/{key}", timeout=5)
         if resp.status_code == 200:
@@ -27,10 +26,9 @@ def get_config_sync(key: str) -> str:
     return ""
 
 
-def get_reply_sync(text: str, sender: str, chatid: str, chattype: str) -> str:
-    """同步调用后端 chat/input"""
+async def _get_reply(text: str, sender: str, chatid: str, chattype: str) -> str:
     try:
-        robot_sn = get_config_sync("robot.sn") or "MC1BCN2K100262058CA0"
+        robot_sn = _get_config("robot.sn") or "MC1BCN2K100262058CA0"
         payload = {
             "event": "text",
             "text": text,
@@ -38,33 +36,31 @@ def get_reply_sync(text: str, sender: str, chatid: str, chattype: str) -> str:
             "source": "wecom",
             "params": {"sender": sender, "chatid": chatid, "chattype": chattype}
         }
-        resp = httpx.post("http://127.0.0.1:8200/api/chat/input", json=payload, timeout=35)
-        if resp.status_code == 200:
-            data = resp.json()
-            reply = data.get("data", {}).get("reply")
-            if reply:
-                return str(reply)
-            return "收到，已处理。"
-        return "处理出错，请稍后再试。"
+        async with httpx.AsyncClient(timeout=35) as client:
+            resp = await client.post("http://127.0.0.1:8200/api/chat/input", json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                reply = data.get("data", {}).get("reply")
+                if reply:
+                    return str(reply)
+                return "收到，已处理。"
+            return "处理出错，请稍后再试。"
     except Exception as e:
         logger.error(f"Get reply error: {e}")
         return "网络异常，请稍后再试。"
 
 
-def poll_notifications_sync(ws_client):
-    """后台线程：轮询 bot_notifications 推送到群"""
-    import time
+async def _poll_notifications(ws_client):
+    """轮询 bot_notifications 推送到群"""
     while True:
         try:
-            ng_resp = httpx.get("http://127.0.0.1:8200/api/notify-groups", timeout=5)
-            if ng_resp.status_code == 200:
-                groups = [g for g in (ng_resp.json().get("data") or []) if g.get("enabled")]
-            else:
-                groups = []
+            async with httpx.AsyncClient(timeout=10) as client:
+                ng_resp = await client.get("http://127.0.0.1:8200/api/notify-groups")
+                groups = [g for g in (ng_resp.json().get("data") or []) if g.get("enabled")] if ng_resp.status_code == 200 else []
 
-            bn_resp = httpx.get("http://127.0.0.1:8200/api/bot-notifications?sent=false&limit=20", timeout=5)
-            if bn_resp.status_code == 200:
-                items = bn_resp.json().get("data") or []
+                bn_resp = await client.get("http://127.0.0.1:8200/api/bot-notifications?sent=false&limit=20")
+                items = bn_resp.json().get("data") or [] if bn_resp.status_code == 200 else []
+
                 for item in items:
                     msg = item.get("message", "")
                     nid = item.get("id")
@@ -74,7 +70,7 @@ def poll_notifications_sync(ws_client):
                         chat_id = group.get("chat_id")
                         if chat_id:
                             try:
-                                ws_client.send_message(
+                                await ws_client.send_message(
                                     chatid=chat_id,
                                     msgtype="markdown",
                                     markdown={"content": msg}
@@ -82,38 +78,30 @@ def poll_notifications_sync(ws_client):
                             except Exception as e:
                                 logger.warning(f"Push to {chat_id} failed: {e}")
                     try:
-                        httpx.patch(
-                            f"http://127.0.0.1:8200/api/bot-notifications/{nid}",
-                            json={"sent": True}, timeout=5
-                        )
+                        await client.patch(f"http://127.0.0.1:8200/api/bot-notifications/{nid}", json={"sent": True})
                     except Exception:
                         pass
         except Exception as e:
             logger.debug(f"Poll error: {e}")
-        time.sleep(3)
+        await asyncio.sleep(3)
 
 
 def main():
-    bot_id = get_config_sync("wecom_bot.bot_id")
-    secret = get_config_sync("wecom_bot.secret")
+    bot_id = _get_config("wecom_bot.bot_id")
+    secret = _get_config("wecom_bot.secret")
 
     if not bot_id or not secret:
-        logger.warning("WecomBot: bot_id or secret not configured, waiting...")
+        logger.error("WecomBot: bot_id or secret not configured")
         import time
-        while True:
-            time.sleep(60)
-            bot_id = get_config_sync("wecom_bot.bot_id")
-            secret = get_config_sync("wecom_bot.secret")
-            if bot_id and secret:
-                break
+        time.sleep(10)
+        return
 
     from aibot import WSClient, WSClientOptions
     options = WSClientOptions(bot_id=bot_id, secret=secret)
     ws_client = WSClient(options)
 
-    # 注册消息处理器
     @ws_client.on("message")
-    def on_message(frame):
+    async def on_message(frame):
         try:
             body = frame.get("body", {})
             msgtype = body.get("msgtype", "")
@@ -138,22 +126,26 @@ def main():
             if "群ID" in text or "chatid" in text.lower():
                 reply = f"当前会话ID：`{chatid}`"
             else:
-                # 在线程池中同步调用（避免阻塞 event loop）
-                reply = get_reply_sync(text, sender, chatid, chattype)
+                reply = await _get_reply(text, sender, chatid, chattype)
 
-            ws_client.reply_stream(frame, reply)
+            # 用 reply_stream 发送（需要 stream_id + finish=True）
+            stream_id = str(uuid.uuid4())
+            await ws_client.reply_stream(frame, stream_id, reply, finish=True)
             logger.info(f"已回复: {reply[:80]}")
         except Exception as e:
             logger.error(f"处理消息失败: {e}")
 
-    # 启动通知推送线程
-    t = threading.Thread(target=poll_notifications_sync, args=(ws_client,), daemon=True)
-    t.start()
-    logger.info("WecomBot starting (sync mode)...")
+    # 启动通知轮询（作为 coroutine，由 ws_client 的 event loop 运行）
+    # 注入到 ws_client 的 loop 里
+    @ws_client.on("connected")
+    async def on_connected():
+        asyncio.ensure_future(_poll_notifications(ws_client))
+        logger.info("WecomBot connected, notification polling started")
+
+    logger.info("WecomBot starting...")
     ws_client.run()
 
 
-# 供 main.py 调用的后台启动
 def start_bot_background():
     t = threading.Thread(target=main, daemon=True)
     t.start()

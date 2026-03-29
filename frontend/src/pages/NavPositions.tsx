@@ -5,7 +5,8 @@ import {
 } from 'antd'
 import {
   EditOutlined, DeleteOutlined, ReloadOutlined,
-  PlusOutlined, EnvironmentOutlined, InfoCircleOutlined
+  PlusOutlined, EnvironmentOutlined, InfoCircleOutlined,
+  SyncOutlined, WarningOutlined
 } from '@ant-design/icons'
 import api from '../api'
 
@@ -23,9 +24,16 @@ interface Terminal {
   name: string
 }
 
+interface MapPositionsData {
+  pois: string[]
+  from_cache: boolean
+}
+
 export default function NavPositionsPage() {
   const [positions, setPositions] = useState<NavPosition[]>([])
   const [terminals, setTerminals] = useState<Terminal[]>([])
+  const [mapPositions, setMapPositions] = useState<MapPositionsData>({ pois: [], from_cache: false })
+  const [loadingPois, setLoadingPois] = useState(false)
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editPos, setEditPos] = useState<NavPosition | null>(null)
@@ -52,9 +60,29 @@ export default function NavPositionsPage() {
     } catch {}
   }
 
+  const fetchMapPositions = async (showMsg = false) => {
+    setLoadingPois(true)
+    try {
+      const res: any = await api.get('/api/robot/map-positions')
+      if (res?.code === 0) {
+        setMapPositions(res.data)
+        if (showMsg) {
+          const count = res.data.pois?.length || 0
+          if (count > 0) message.success(`已获取 ${count} 个POI点位`)
+          else message.warning('机器人暂无POI数据')
+        }
+      }
+    } catch {
+      if (showMsg) message.error('获取POI列表失败')
+    } finally {
+      setLoadingPois(false)
+    }
+  }
+
   useEffect(() => {
     fetchPositions()
     fetchTerminals()
+    fetchMapPositions()
   }, [])
 
   const openAdd = () => {
@@ -111,9 +139,15 @@ export default function NavPositionsPage() {
     }
   }
 
-  // 找到未配置映射的终端
   const mappedNames = new Set(positions.map(p => p.cloud_position_name))
   const unmappedCount = terminals.filter(t => !mappedNames.has(t.name)).length
+
+  // POI 下拉选项：机器人上报的 + 当前已有映射里的（去重兜底）
+  const existingPois = positions.map(p => p.robot_poi_name).filter(Boolean)
+  const poiOptions = Array.from(new Set([...mapPositions.pois, ...existingPois]))
+    .filter(Boolean)
+    .sort()
+    .map(p => ({ value: p, label: p }))
 
   const columns = [
     {
@@ -186,31 +220,61 @@ export default function NavPositionsPage() {
           </div>
         </div>
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={fetchPositions} loading={loading}>刷新</Button>
+          <Button icon={<ReloadOutlined />} onClick={fetchPositions} loading={loading}>刷新列表</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>新增映射</Button>
         </Space>
       </div>
 
-      {/* Info alert */}
+      {/* Info */}
       <Alert
         icon={<InfoCircleOutlined />}
         showIcon
         type="info"
         message="APK安装后，可从机器人读取POI列表。当前请手动填写机器人地图中的点位名称。"
         style={{
-          marginBottom: 16,
+          marginBottom: 12,
           background: 'rgba(0,212,255,0.06)',
           border: '1px solid rgba(0,212,255,0.2)',
           borderRadius: 8,
-          color: 'var(--text-secondary)',
         }}
       />
 
-      {/* Unmapped hint */}
+      {/* POI 状态条 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '10px 16px', marginBottom: 16,
+        background: 'rgba(15,22,40,0.7)',
+        border: '1px solid rgba(0,212,255,0.12)',
+        borderRadius: 8,
+      }}>
+        {mapPositions.pois.length > 0 ? (
+          <>
+            <span style={{ color: '#22c55e', fontSize: 13 }}>
+              ● 已从机器人获取 {mapPositions.pois.length} 个POI点位
+              {mapPositions.from_cache && (
+                <span style={{ color: '#f59e0b', marginLeft: 6 }}>（历史数据）</span>
+              )}
+            </span>
+          </>
+        ) : (
+          <span style={{ color: '#f59e0b', fontSize: 13 }}>
+            <WarningOutlined style={{ marginRight: 6 }} />
+            机器人尚未上报点位数据，请先安装APK并确保机器人连接
+          </span>
+        )}
+        <Button
+          size="small" icon={<SyncOutlined />}
+          loading={loadingPois}
+          onClick={() => fetchMapPositions(true)}
+          style={{ marginLeft: 'auto' }}
+        >
+          刷新POI列表
+        </Button>
+      </div>
+
       {unmappedCount > 0 && (
         <Alert
-          type="warning"
-          showIcon
+          type="warning" showIcon
           message={`还有 ${unmappedCount} 个终端未配置导航点位映射，导览路线功能将无法为其导航。`}
           style={{ marginBottom: 16, borderRadius: 8 }}
         />
@@ -259,7 +323,7 @@ export default function NavPositionsPage() {
         />
       </Card>
 
-      {/* Add/Edit Modal */}
+      {/* Modal */}
       <Modal
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -294,13 +358,50 @@ export default function NavPositionsPage() {
 
           <Form.Item
             name="robot_poi_name"
-            label="机器人 POI 名"
-            rules={[{ required: true, message: '请填写机器人POI名称' }]}
-            extra='填写机器人地图中的点位名称，如"大岛台"、"入口"'
+            label={
+              <span>
+                机器人 POI 名
+                {mapPositions.from_cache && mapPositions.pois.length > 0 && (
+                  <span style={{ color: '#f59e0b', fontSize: 12, marginLeft: 8, fontWeight: 400 }}>
+                    （历史数据）
+                  </span>
+                )}
+              </span>
+            }
+            rules={[{ required: true, message: '请选择或输入POI名称' }]}
+            extra={
+              poiOptions.length === 0
+                ? '机器人未上报点位，可手动输入点位名称'
+                : `已获取 ${poiOptions.length} 个点位，也可手动输入`
+            }
           >
-            <Input
-              placeholder='例如：大岛台'
-              prefix={<EnvironmentOutlined style={{ color: 'var(--text-muted)' }} />}
+            <Select
+              showSearch
+              allowClear
+              placeholder={poiOptions.length === 0 ? '手动输入POI名称（机器人未上报）' : '选择或搜索POI点位'}
+              filterOption={(input, opt) =>
+                (opt?.label as string)?.toLowerCase().includes(input.toLowerCase())
+              }
+              options={poiOptions}
+              notFoundContent={
+                <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: 13 }}>
+                  <WarningOutlined style={{ marginRight: 6, color: '#f59e0b' }} />
+                  机器人尚未上报点位，请先连接机器人
+                  <br />
+                  <Button
+                    size="small" type="link" icon={<SyncOutlined />}
+                    loading={loadingPois}
+                    onClick={() => fetchMapPositions(true)}
+                    style={{ padding: '4px 0', marginTop: 4 }}
+                  >
+                    重新获取
+                  </Button>
+                </div>
+              }
+              // 允许自由输入（通过 onChange 配合 value）
+              onSearch={(val) => {
+                if (val) form.setFieldValue('robot_poi_name', val)
+              }}
             />
           </Form.Item>
 

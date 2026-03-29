@@ -1,11 +1,11 @@
 import logging
 from fastapi import APIRouter
-from sqlalchemy import select
+from sqlalchemy import select, text
 from database import async_session
 from models import ChatSession, Exhibit, OperationLog
 from schemas import ok, err, ChatInput
 from intent import recognize_intent
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -59,6 +59,9 @@ async def chat_input(body: ChatInput):
             action_result = await handle_intent(intent, extra, robot_sn, chat_session)
             response_data["result"] = action_result
 
+            # 机器人回复后进入对话模式30秒（只要有动作响应就激活）
+            await _set_listening_mode(robot_sn, True)
+
         elif event == "robot_arrived":
             poi = params.get("poi", "")
             from lane_engine import trigger_callback
@@ -68,6 +71,8 @@ async def chat_input(body: ChatInput):
         elif event == "tts_done":
             from lane_engine import trigger_callback
             await trigger_callback("tts_done")
+            # TTS播完后激活对话模式30秒
+            await _set_listening_mode(robot_sn, True)
             response_data["result"] = "TTS done"
 
         elif event == "robot_callback":
@@ -90,6 +95,74 @@ async def chat_input(body: ChatInput):
     except Exception as e:
         logger.error(f"Chat input error: {e}")
         return err(str(e))
+
+
+async def _set_listening_mode(robot_sn: str, active: bool):
+    """设置机器人的对话监听模式"""
+    try:
+        async with async_session() as session:
+            if active:
+                await session.execute(
+                    text("""
+                        UPDATE chat_sessions
+                        SET listening_mode=TRUE,
+                            listening_expires_at=NOW() AT TIME ZONE 'UTC' + INTERVAL '30 seconds'
+                        WHERE robot_sn=:sn
+                    """),
+                    {"sn": robot_sn}
+                )
+            else:
+                await session.execute(
+                    text("UPDATE chat_sessions SET listening_mode=FALSE WHERE robot_sn=:sn"),
+                    {"sn": robot_sn}
+                )
+            await session.commit()
+    except Exception as e:
+        logger.warning(f"Set listening mode error: {e}")
+
+
+@router.get("/listening-mode/{robot_sn}")
+async def get_listening_mode(robot_sn: str):
+    """APK轮询：查询机器人是否在对话监听模式（TTS后30秒内免唤醒词）"""
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                text("""
+                    SELECT listening_mode, listening_expires_at
+                    FROM chat_sessions WHERE robot_sn=:sn
+                    ORDER BY id DESC LIMIT 1
+                """),
+                {"sn": robot_sn}
+            )
+            row = result.fetchone()
+
+        if not row:
+            return ok({"listening": False})
+
+        listening_mode = row[0]
+        listening_expires_at = row[1]
+
+        if not listening_mode or not listening_expires_at:
+            return ok({"listening": False})
+
+        now_utc = datetime.now(timezone.utc)
+        # listening_expires_at may be naive (no tz), compare carefully
+        if hasattr(listening_expires_at, 'tzinfo') and listening_expires_at.tzinfo:
+            active = listening_expires_at > now_utc
+        else:
+            from datetime import timezone as tz
+            expires_utc = listening_expires_at.replace(tzinfo=timezone.utc)
+            active = expires_utc > now_utc
+
+        if not active and listening_mode:
+            # 过期，重置
+            await _set_listening_mode(robot_sn, False)
+
+        return ok({"listening": bool(active)})
+
+    except Exception as e:
+        logger.error(f"Get listening mode error: {e}")
+        return ok({"listening": False})
 
 
 async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: ChatSession) -> dict:

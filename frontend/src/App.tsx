@@ -3,26 +3,24 @@ import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from 
 import { ConfigProvider, theme, Spin } from 'antd'
 import {
   DashboardOutlined, AppstoreOutlined, ApartmentOutlined, UserOutlined,
-  RobotOutlined, FileTextOutlined, ThunderboltOutlined, SettingOutlined, EnvironmentOutlined
+  FileTextOutlined, ThunderboltOutlined, SettingOutlined, SoundOutlined
 } from '@ant-design/icons'
 import MonitorPage from './pages/Monitor'
 import PresetsPage from './pages/Presets'
 import RoutesPage from './pages/Routes'
-import RobotsPage from './pages/Robots'
 import LogsPage from './pages/Logs'
 import SetupPage from './pages/Setup'
 import EmployeesPage from './pages/Employees'
 import TourStopsPage from './pages/TourStops'
-import NavPositionsPage from './pages/NavPositions'
+import ExhibitScriptsPage from './pages/ExhibitScripts'
 import api from './api'
 
 const NAV_ITEMS = [
   { path: '/', label: '监控大屏', icon: <DashboardOutlined /> },
   { path: '/presets', label: '接待套餐', icon: <AppstoreOutlined /> },
   { path: '/routes', label: '流程管理', icon: <ApartmentOutlined /> },
-  { path: '/tour-stops', label: '导览路线', icon: <RobotOutlined style={{}} /> },
-  { path: '/nav-positions', label: '点位映射', icon: <EnvironmentOutlined /> },
-  { path: '/robots', label: '机器人配置', icon: <RobotOutlined /> },
+  { path: '/tour-stops', label: '导览路线', icon: <ApartmentOutlined /> },
+  { path: '/exhibit-scripts', label: '展项讲解', icon: <SoundOutlined /> },
   { path: '/logs', label: '操作日志', icon: <FileTextOutlined /> },
   { path: '/employees', label: '人脸库', icon: <UserOutlined /> },
   { path: '/setup', label: '初始设置', icon: <SettingOutlined /> },
@@ -37,7 +35,6 @@ function Sidebar() {
       display: 'flex', flexDirection: 'column',
       flexShrink: 0
     }}>
-      {/* Logo */}
       <div style={{ padding: '24px 20px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
@@ -56,7 +53,6 @@ function Sidebar() {
         </div>
       </div>
 
-      {/* Nav */}
       <nav style={{ flex: 1, padding: '12px 8px' }}>
         {NAV_ITEMS.map(item => {
           const active = item.path === '/'
@@ -82,16 +78,12 @@ function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom status */}
-      <div style={{
-        padding: '16px 20px',
-        borderTop: '1px solid var(--border-subtle)'
-      }}>
+      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-subtle)' }}>
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>系统连接状态</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {['机器人', '中控系统', '企微Bot'].map((name, i) => (
+          {['机器人', '中控系统', '企微Bot'].map((name) => (
             <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="status-dot online" style={{ animationDelay: `${i * 0.4}s` }} />
+              <span className="status-dot online" />
               <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{name}</span>
             </div>
           ))}
@@ -157,11 +149,10 @@ function AppShell() {
             <Route path="/monitor" element={<MonitorPage />} />
             <Route path="/presets" element={<PresetsPage />} />
             <Route path="/routes" element={<RoutesPage />} />
-            <Route path="/robots" element={<RobotsPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/employees" element={<EmployeesPage />} />
             <Route path="/tour-stops" element={<TourStopsPage />} />
-            <Route path="/nav-positions" element={<NavPositionsPage />} />
+            <Route path="/exhibit-scripts" element={<ExhibitScriptsPage />} />
           </Routes>
         </Suspense>
       </main>
@@ -186,16 +177,9 @@ export default function App() {
           fontFamily: '"Inter","PingFang SC","Helvetica Neue",sans-serif',
         },
         components: {
-          Button: {
-            colorPrimaryHover: '#33ddff',
-          },
-          Table: {
-            colorBgContainer: 'transparent',
-          },
-          Modal: {
-            contentBg: '#0f1628',
-            headerBg: '#0f1628',
-          }
+          Button: { colorPrimaryHover: '#33ddff' },
+          Table: { colorBgContainer: 'transparent' },
+          Modal: { contentBg: '#0f1628', headerBg: '#0f1628' }
         }
       }}
     >

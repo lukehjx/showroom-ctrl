@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ConfigProvider, theme, Spin } from 'antd'
 import {
-  DashboardOutlined, AppstoreOutlined, ApartmentOutlined,
+  DashboardOutlined, AppstoreOutlined, ApartmentOutlined, UserOutlined,
   RobotOutlined, FileTextOutlined, ThunderboltOutlined, SettingOutlined
 } from '@ant-design/icons'
 import MonitorPage from './pages/Monitor'
@@ -11,14 +11,18 @@ import RoutesPage from './pages/Routes'
 import RobotsPage from './pages/Robots'
 import LogsPage from './pages/Logs'
 import SetupPage from './pages/Setup'
+import EmployeesPage from './pages/Employees'
+import TourStopsPage from './pages/TourStops'
 import api from './api'
 
 const NAV_ITEMS = [
   { path: '/', label: '监控大屏', icon: <DashboardOutlined /> },
   { path: '/presets', label: '接待套餐', icon: <AppstoreOutlined /> },
   { path: '/routes', label: '流程管理', icon: <ApartmentOutlined /> },
+  { path: '/tour-stops', label: '导览路线', icon: <RobotOutlined style={{}} /> },
   { path: '/robots', label: '机器人配置', icon: <RobotOutlined /> },
   { path: '/logs', label: '操作日志', icon: <FileTextOutlined /> },
+  { path: '/employees', label: '人脸库', icon: <UserOutlined /> },
   { path: '/setup', label: '初始设置', icon: <SettingOutlined /> },
 ]
 
@@ -153,6 +157,8 @@ function AppShell() {
             <Route path="/routes" element={<RoutesPage />} />
             <Route path="/robots" element={<RobotsPage />} />
             <Route path="/logs" element={<LogsPage />} />
+            <Route path="/employees" element={<EmployeesPage />} />
+            <Route path="/tour-stops" element={<TourStopsPage />} />
           </Routes>
         </Suspense>
       </main>

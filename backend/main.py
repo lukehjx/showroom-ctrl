@@ -105,7 +105,8 @@ async def health():
 
 # 注册所有路由
 from routers import config, sync, terminals, exhibits, routes, chat, robots, scenes, logs, nav_positions
-from routers import ws_robot, robot_status
+from routers import ws_robot, robot_status, employees
+from routers import tour_stops as tour_stops_module
 from routers import presets, schedules, kiosk, reception, qrcode, device_status
 
 app.include_router(config.router)
@@ -126,6 +127,8 @@ app.include_router(qrcode.router)
 app.include_router(device_status.router)
 app.include_router(ws_robot.router)
 app.include_router(robot_status.router)
+app.include_router(employees.router)
+app.include_router(tour_stops_module.router)
 
 
 if __name__ == "__main__":

@@ -280,6 +280,45 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
             index = extra.get("index", 1)
             return {"action": "select", "index": index}
 
+        elif intent in ("lights_off", "lights_on", "devices_off", "devices_on"):
+            import socket as _socket
+            from sqlalchemy import text as sa_text
+
+            if intent == "lights_off":
+                name_filter, group_filter = "关", "灯"
+            elif intent == "lights_on":
+                name_filter, group_filter = "开", "灯"
+            elif intent == "devices_off":
+                name_filter, group_filter = "关机", ""
+            else:
+                name_filter, group_filter = "开机", ""
+
+            async with async_session() as session:
+                if group_filter:
+                    q = await session.execute(
+                        sa_text("SELECT command_str, is_hex FROM cloud_commands WHERE name=:n AND group_name LIKE :g AND protocol_type='tcp'"),
+                        {"n": name_filter, "g": f"%{group_filter}%"}
+                    )
+                else:
+                    q = await session.execute(
+                        sa_text("SELECT command_str, is_hex FROM cloud_commands WHERE name=:n AND protocol_type='tcp'"),
+                        {"n": name_filter}
+                    )
+                cmds = q.mappings().all()
+
+            sent, errors = 0, []
+            for cmd in cmds:
+                try:
+                    cmd_str = cmd["command_str"] or ""
+                    is_hex = cmd["is_hex"] or False
+                    with _socket.create_connection(("112.20.77.18", 8989), timeout=3) as s:
+                        data = bytes.fromhex(cmd_str) if is_hex else cmd_str.encode("utf-8")
+                        s.sendall(data)
+                    sent += 1
+                except Exception as e:
+                    errors.append(str(e)[:40])
+            return {"action": intent, "total": len(cmds), "sent": sent, "errors": errors[:3]}
+
         else:
             return {"action": intent, "status": "acknowledged"}
 
@@ -322,6 +361,22 @@ async def _generate_reply(intent: str, extra: dict, action_result: dict, text: s
     if intent == "select":
         index = extra.get("index", 1)
         return f"好的，正在播放第{index}个内容。"
+
+    if intent == "lights_off":
+        sent = action_result.get("sent", 0)
+        total = action_result.get("total", 0)
+        return f"好的，已发送关灯指令，共 {sent}/{total} 路灯光关闭。"
+
+    if intent == "lights_on":
+        sent = action_result.get("sent", 0)
+        total = action_result.get("total", 0)
+        return f"好的，已发送开灯指令，共 {sent}/{total} 路灯光开启。"
+
+    if intent in ("devices_off", "devices_on"):
+        sent = action_result.get("sent", 0)
+        total = action_result.get("total", 0)
+        action_word = "关机" if intent == "devices_off" else "开机"
+        return f"好的，已发送{action_word}指令，共 {sent}/{total} 个设备。"
 
     # unknown 意图 → Qwen 闲聊
     try:

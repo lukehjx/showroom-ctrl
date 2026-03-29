@@ -7,6 +7,10 @@ logger = logging.getLogger(__name__)
 QWEN_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 
 INTENT_KEYWORDS = {
+    'lights_off': ['灯全关', '关灯', '关所有灯', '灯全部关', '关掉所有灯', '关闭所有灯', '关闭灯光', '灯关'],
+    'lights_on': ['灯全开', '开灯', '开所有灯', '灯全部开', '打开所有灯', '开启灯光', '灯开'],
+    'devices_on': ['设备全开', '全部开机', '开机', '启动设备', '开启所有设备'],
+    'devices_off': ['设备全关', '全部关机', '关机', '关闭设备', '关闭所有设备'],
     'list_files': ['有哪些文件', '有什么文件', '有哪些内容', '有什么内容', '有什么资料', '给我看看', '这里有什么', '展示什么', '能看什么'],
     'next_exhibit': ['下一个', '继续参观', '往前走', '去下一个'],
     'prev_exhibit': ['上一个', '回上一个', '去上一个'],

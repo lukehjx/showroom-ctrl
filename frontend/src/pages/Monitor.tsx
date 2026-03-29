@@ -61,13 +61,13 @@ export default function MonitorPage() {
       const [sceneRes, devRes, robRes, preRes, logRes] = await Promise.allSettled([
         api.get('/api/current-scene'),
         api.get('/api/device-status'),
-        api.get('/api/robots'),
+        api.get('/api/robot/status/MC1BCN2K100262058CA0'),
         api.get('/api/presets'),
         api.get('/api/logs?page=1&page_size=25'),
       ])
       if (sceneRes.status === 'fulfilled' && sceneRes.value?.data) setScene(sceneRes.value.data)
       if (devRes.status === 'fulfilled' && Array.isArray(devRes.value?.data)) setDevices(devRes.value.data)
-      if (robRes.status === 'fulfilled' && Array.isArray(robRes.value?.data)) setRobots(robRes.value.data)
+      if (robRes.status === 'fulfilled' && robRes.value?.data) setRobots([robRes.value.data])
       if (preRes.status === 'fulfilled' && Array.isArray(preRes.value?.data)) setPresets(preRes.value.data)
       if (logRes.status === 'fulfilled' && logRes.value?.data?.items) setLogs(logRes.value.data.items)
     } catch (e) { console.error(e) }
@@ -81,7 +81,7 @@ export default function MonitorPage() {
   }, [fetchAll])
 
   const onlineDevices = devices.filter(d => d.is_online).length
-  const activeRobots = robots.filter(r => r.enabled).length
+  const activeRobots = robots.filter(r => r.status !== "offline").length
 
   const handleTrigger = async (id: number) => {
     setTriggering(id)
@@ -145,7 +145,7 @@ export default function MonitorPage() {
           label="机器人在线"
           value={activeRobots > 0 ? <span className="glow-green">{activeRobots}</span> : <span style={{ color: 'var(--danger)' }}>0</span>}
           color="#00ff88"
-          sub={`共 ${robots.length} 台配置`}
+          sub={robots.length > 0 && robots[0]?.status !== "offline" ? "在线" : "离线"}
         />
         <StatCard
           icon={<ThunderboltFilled />}

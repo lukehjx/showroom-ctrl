@@ -256,14 +256,25 @@ async def handle_intent(intent: str, extra: dict, robot_sn: str, chat_session: C
                 current_id = cs.current_exhibit_id if cs else None
 
             if current_id:
-                from models import ExhibitResource, CloudResource
+                from models import CloudResource, CloudTerminal
+                from sqlalchemy import text as sa_text
                 async with async_session() as session:
+                    # current_exhibit_id 可能是 terminal_id 或 cloud_terminals.id
+                    # 先获取真正的 terminal_id
+                    real_tid = current_id
+                    t_result = await session.execute(select(CloudTerminal).where(CloudTerminal.id == current_id))
+                    terminal = t_result.scalars().first()
+                    if terminal:
+                        real_tid = terminal.terminal_id
+
                     result = await session.execute(
-                        select(ExhibitResource).where(ExhibitResource.exhibit_id == current_id).order_by(ExhibitResource.sort_order)
+                        sa_text("SELECT id, resource_id, title, file_name, sort FROM cloud_resources WHERE (raw_data->>'_terminal_id')::int = :tid ORDER BY sort"),
+                        {"tid": real_tid}
                     )
-                    resources = result.scalars().all()
-                return {"action": "list_files", "exhibit_id": current_id, "count": len(resources), "resources": [r.id for r in resources]}
-            return {"action": "list_files", "message": "No current exhibit"}
+                    rows = result.mappings().all()
+                    files = [{"id": r["id"], "resource_id": r["resource_id"], "title": r["title"] or r["file_name"] or f"资源{i+1}"} for i, r in enumerate(rows)]
+                return {"action": "list_files", "terminal_id": real_tid, "count": len(files), "files": files}
+            return {"action": "list_files", "count": 0, "files": [], "message": "未指定展位"}
 
         elif intent == "select":
             index = extra.get("index", 1)
@@ -300,9 +311,13 @@ async def _generate_reply(intent: str, extra: dict, action_result: dict, text: s
 
     if intent == "list_files":
         count = action_result.get("count", 0)
-        if count > 0:
-            return f"当前展位共有 {count} 个内容，说「第一个」「第二个」等来选择播放。"
-        return "当前展位暂无内容资源。"
+        files = action_result.get("files", [])
+        if count > 0 and files:
+            names = "".join([f"\n第{i+1}个：《{f['title']}》" for i, f in enumerate(files[:8])])
+            if count > 8:
+                names += f"\n...共{count}个"
+            return f"当前展位共有 {count} 个内容：{names}\n\n说「第一个」「第二个」等来播放。"
+        return "当前展位暂无内容资源，可能需要先同步数据。"
 
     if intent == "select":
         index = extra.get("index", 1)
